@@ -710,7 +710,8 @@ const terrainUniforms = {
   uSunDirectionWorld: { value: new THREE.Vector3(0, 1, 0) },
   uSunTint: { value: new THREE.Color(1, 0.8, 0.6) },
   uHazeScaleHeight: { value: 34.0 },
-  uSelfShadowTexel: { value: 1 / TERRAIN_VERTS_PER_SIDE }
+  uSelfShadowTexel: { value: 1 / TERRAIN_VERTS_PER_SIDE },
+  uPixelAngle: { value: 0.0014 }
 };
 
 const terrainMaterial = new THREE.MeshStandardMaterial({
@@ -760,6 +761,7 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       varying float vTerrainWorldHeight;
       uniform sampler2D uSelfShadowMap;
       uniform float uSelfShadowTexel;
+      uniform float uPixelAngle;
       uniform float uHazeScaleHeight;
       uniform vec3 uSunDirectionWorld;
       uniform vec3 uSunTint;
@@ -833,17 +835,27 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       // give a dune sheet its texture long after the fine ripples have faded.
       float megaPhase = (rippleAcross + rippleMeander * 1.6) * 0.92;
       float megaValue = sin(megaPhase) * 0.6 + sin(megaPhase * 0.41 + 2.1) * 0.4;
-      float megaFade = (1.0 - smoothstep(240.0, 900.0, vTerrainViewDistance))
-        * clamp(1.6 - fwidth(megaPhase) * 1.4, 0.0, 1.0);
+      /* World size of one pixel on this surface, used to fade each ripple
+         octave out just before it starts aliasing. fwidth() would give this
+         directly, but it is near constant across a triangle and jumps at every
+         triangle edge — which printed the terrain's own quad grid into the sand
+         as flat patches of missing ripple. This estimate is continuous. */
+      float terrainPixelFootprint = vTerrainViewDistance * uPixelAngle
+        / max(abs(dot(vTerrainViewDir, vTerrainWorldNormal)), 0.12);
 
-      float rippleDistanceFade = 1.0 - smoothstep(55.0, 260.0, vTerrainViewDistance);
-      float rippleAliasFade = clamp(1.4 - fwidth(ripplePhase) * 0.9, 0.0, 1.0);
-      float rippleStrength = rippleDistanceFade * rippleAliasFade
+      float rippleAliasFade = 1.0 - smoothstep(0.16, 0.52, terrainPixelFootprint);
+      float fineAliasFade = 1.0 - smoothstep(0.05, 0.17, terrainPixelFootprint);
+      float megaAliasFade = 1.0 - smoothstep(1.10, 3.40, terrainPixelFootprint);
+      float rippleHorizonLimit = 1.0 - smoothstep(320.0, 900.0, vTerrainViewDistance);
+
+      float rippleStrength = rippleAliasFade * rippleHorizonLimit
         * (0.42 + 0.58 * uWindStrength) * pow(vTerrainFlatness, 2.0);
-      float megaStrength = megaFade * (0.5 + 0.5 * uWindStrength) * pow(vTerrainFlatness, 1.5);
+      float megaStrength = megaAliasFade * rippleHorizonLimit
+        * (0.5 + 0.5 * uWindStrength) * pow(vTerrainFlatness, 1.5);
 
-      float rippleValue = sin(ripplePhase) + sin(ripplePhaseFine) * 0.35;
-      float rippleSlope = (cos(ripplePhase) * 6.1 * 0.021 + cos(ripplePhaseFine) * 20.1 * 0.004) * rippleStrength
+      float rippleValue = sin(ripplePhase) + sin(ripplePhaseFine) * 0.35 * fineAliasFade;
+      float rippleSlope = (cos(ripplePhase) * 6.1 * 0.021
+          + cos(ripplePhaseFine) * 20.1 * 0.004 * fineAliasFade) * rippleStrength
         + cos(megaPhase) * 0.92 * 0.075 * megaStrength;
 
       /* Mid-scale relief. The heightfield is smooth at ten-metre scale; a shallow
@@ -2380,6 +2392,8 @@ window.addEventListener('resize', () => {
 function updatePointPixelScale() {
   const verticalFovRadians = THREE.MathUtils.degToRad(camera.fov);
   sandUniforms.uPixelScale.value = window.innerHeight / (2 * Math.tan(verticalFovRadians / 2));
+  const bufferHeight = Math.max(window.innerHeight * renderer.getPixelRatio(), 1);
+  terrainUniforms.uPixelAngle.value = (2 * Math.tan(verticalFovRadians / 2)) / bufferHeight;
 }
 
 /* ==========================================================================
@@ -2490,6 +2504,7 @@ function tick() {
     if (qualityCheckTimer > 3 && smoothedFps < 46 && pixelRatioCap > 1) {
       pixelRatioCap = Math.max(1, pixelRatioCap - 0.5);
       renderer.setPixelRatio(pixelRatioCap);
+      updatePointPixelScale();
       qualityCheckTimer = 0;
     }
   }
