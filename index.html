@@ -438,6 +438,7 @@ const skyUniforms = {
   uGlowSigma: { value: 0.2 },
   uGlowStrength: { value: 0.8 },
   uStarAmount: { value: 0 },
+  uGroundBounceColor: { value: new THREE.Color(0.35, 0.25, 0.15) },
   uTime: { value: 0 }
 };
 
@@ -457,6 +458,7 @@ const skyMaterial = new THREE.ShaderMaterial({
     precision highp float;
     varying vec3 vSkyDirection;
     uniform vec3 uZenithColor, uHorizonColor, uHazeColor, uSunDiskColor, uSunGlowColor;
+    uniform vec3 uGroundBounceColor;
     uniform vec3 uSunDirection;
     uniform float uDiskRadius, uDiskBrightness, uGlowSigma, uGlowStrength, uStarAmount, uTime;
 
@@ -501,8 +503,12 @@ const skyMaterial = new THREE.ShaderMaterial({
       float limbDarken = 1.0 - 0.22 * smoothstep(0.0, uDiskRadius, angleToSun);
       skyColor = mix(skyColor, uSunDiskColor * (uDiskBrightness * limbDarken), diskMask);
 
-      // dust haze below the horizon line, matched to scene fog
-      skyColor = mix(uHazeColor, skyColor, smoothstep(-0.10, 0.035, upness));
+      #ifdef ENV_PROBE
+        skyColor = mix(uGroundBounceColor, skyColor, smoothstep(-0.60, 0.05, upness));
+      #else
+        // dust haze below the horizon line, matched to scene fog
+        skyColor = mix(uHazeColor, skyColor, smoothstep(-0.10, 0.035, upness));
+      #endif
 
       // dither to kill banding across the wide gradients
       float dither = (hash31(vec3(gl_FragCoord.xy, 1.0)) - 0.5) / 255.0;
@@ -516,18 +522,49 @@ skyDome.frustumCulled = false;
 skyDome.renderOrder = -1000;
 scene.add(skyDome);
 
+/* A second copy of the sky lives in its own scene and is convolved into an
+   irradiance probe, so surfaces receive directional skylight — cool from the
+   zenith, warm from the sun's side — instead of one averaged hemisphere colour.
+   Below the horizon the probe returns sand bounce, which is what actually
+   lights the underside of an animal out here. */
+const skyProbeMaterial = skyMaterial.clone();
+skyProbeMaterial.uniforms = skyUniforms;
+skyProbeMaterial.defines = { ENV_PROBE: '' };
+const skyProbeScene = new THREE.Scene();
+skyProbeScene.add(new THREE.Mesh(new THREE.SphereGeometry(1000, 32, 22), skyProbeMaterial));
+
+const environmentGenerator = new THREE.PMREMGenerator(renderer);
+let environmentTarget = null;
+let environmentDirty = true;
+let environmentRefreshedAt = -1e9;
+
+function refreshEnvironmentProbe(nowMs) {
+  if (nowMs - environmentRefreshedAt < 140) return;
+  environmentRefreshedAt = nowMs;
+  const previousTarget = environmentTarget;
+  environmentTarget = environmentGenerator.fromScene(skyProbeScene, 0.0, 1, 4000, { size: 128 });
+  scene.environment = environmentTarget.texture;
+  if (previousTarget) previousTarget.dispose();
+  environmentDirty = false;
+}
+
 const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
 sunLight.castShadow = true;
-sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.mapSize.set(3072, 3072);
 sunLight.shadow.bias = -0.0006;
-sunLight.shadow.normalBias = 0.09;
+sunLight.shadow.normalBias = 0.055;
+sunLight.shadow.radius = 2.0;
 sunLight.shadow.camera.near = 1;
 sunLight.shadow.camera.far = 1400;
 scene.add(sunLight);
 scene.add(sunLight.target);
 
-const hemisphereLight = new THREE.HemisphereLight(0x88aadd, 0xc09060, 0.8);
-scene.add(hemisphereLight);
+/* A faint neutral fill keeps the probe from being the only indirect source on
+   the animals; the probe supplies hue, this supplies a little modelling. */
+const sandBounceLight = new THREE.DirectionalLight(0xffd9b0, 0.12);
+sandBounceLight.castShadow = false;
+scene.add(sandBounceLight);
+scene.add(sandBounceLight.target);
 
 /* ==========================================================================
    5. Terrain mesh — a scrolling heightfield with a baked self-shadow map
@@ -551,9 +588,10 @@ const terrainIndexArray = new Uint32Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS * 
 const terrainHeightGrid = new Float32Array(TERRAIN_VERT_COUNT);
 const terrainHeightGridBack = new Float32Array(TERRAIN_VERT_COUNT);
 const terrainNormalBack = new Float32Array(TERRAIN_VERT_COUNT * 3);
-const terrainShadowBytes = new Uint8Array(TERRAIN_VERT_COUNT);
-const terrainShadowBack = new Uint8Array(TERRAIN_VERT_COUNT);
-const terrainShadowBlurTemp = new Uint8Array(TERRAIN_VERT_COUNT);
+// two channels: R = direct sun visibility, G = sky occlusion
+const terrainShadowBytes = new Uint8Array(TERRAIN_VERT_COUNT * 2);
+const terrainShadowBack = new Uint8Array(TERRAIN_VERT_COUNT * 2);
+const terrainShadowBlurTemp = new Uint8Array(TERRAIN_VERT_COUNT * 2);
 
 (function initialiseTerrainTopology() {
   let vertexCursor = 0;
@@ -592,7 +630,7 @@ const terrainShadowBlurTemp = new Uint8Array(TERRAIN_VERT_COUNT);
 })();
 
 const terrainShadowTexture = new THREE.DataTexture(
-  terrainShadowBytes, TERRAIN_VERTS_PER_SIDE, TERRAIN_VERTS_PER_SIDE, THREE.RedFormat, THREE.UnsignedByteType
+  terrainShadowBytes, TERRAIN_VERTS_PER_SIDE, TERRAIN_VERTS_PER_SIDE, THREE.RGFormat, THREE.UnsignedByteType
 );
 terrainShadowTexture.minFilter = THREE.LinearFilter;
 terrainShadowTexture.magFilter = THREE.LinearFilter;
@@ -607,13 +645,18 @@ const terrainUniforms = {
   uWindAxis: { value: new THREE.Vector2(DUNE_COS, DUNE_SIN) },
   uWindStrength: { value: 0.35 },
   uHeatShimmer: { value: 0.2 },
-  uSceneTime: { value: 0 }
+  uSceneTime: { value: 0 },
+  uSkylightIntensity: { value: 1.0 },
+  uSunDirectionWorld: { value: new THREE.Vector3(0, 1, 0) },
+  uSunTint: { value: new THREE.Color(1, 0.8, 0.6) },
+  uHazeScaleHeight: { value: 34.0 }
 };
 
 const terrainMaterial = new THREE.MeshStandardMaterial({
   color: new THREE.Color().setHex(0xd9a86a, THREE.SRGBColorSpace),
   roughness: 0.97,
   metalness: 0.0,
+  envMapIntensity: 0.62,
   dithering: true
 });
 
@@ -627,14 +670,21 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       varying vec2 vTerrainWorldXZ;
       varying float vTerrainViewDistance;
       varying float vTerrainFlatness;
+      varying vec3 vTerrainViewDir;
+      varying vec3 vTerrainWorldNormal;
+      varying float vTerrainWorldHeight;
     `)
     .replace('#include <begin_vertex>', /* glsl */`
       #include <begin_vertex>
       vec4 terrainWorldPosition = modelMatrix * vec4(transformed, 1.0);
       vTerrainUv = uv;
       vTerrainWorldXZ = terrainWorldPosition.xz;
-      vTerrainViewDistance = length(terrainWorldPosition.xyz - cameraPosition);
+      vec3 terrainToCamera = cameraPosition - terrainWorldPosition.xyz;
+      vTerrainViewDistance = length(terrainToCamera);
+      vTerrainViewDir = terrainToCamera / max(vTerrainViewDistance, 0.001);
       vTerrainFlatness = clamp(normal.y, 0.0, 1.0);
+      vTerrainWorldNormal = normalize(mat3(modelMatrix) * normal);
+      vTerrainWorldHeight = terrainWorldPosition.y;
     `);
 
   shaderProgram.fragmentShader = shaderProgram.fragmentShader
@@ -644,12 +694,19 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       varying vec2 vTerrainWorldXZ;
       varying float vTerrainViewDistance;
       varying float vTerrainFlatness;
+      varying vec3 vTerrainViewDir;
+      varying vec3 vTerrainWorldNormal;
+      varying float vTerrainWorldHeight;
       uniform sampler2D uSelfShadowMap;
+      uniform float uHazeScaleHeight;
+      uniform vec3 uSunDirectionWorld;
+      uniform vec3 uSunTint;
       uniform vec3 uShadeTint;
       uniform vec2 uWindAxis;
       uniform float uWindStrength;
       uniform float uHeatShimmer;
       uniform float uSceneTime;
+      uniform float uSkylightIntensity;
 
       float sandHash(vec2 cellCoord) {
         return fract(sin(dot(cellCoord, vec2(127.1, 311.7))) * 43758.5453);
@@ -682,15 +739,30 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       float ripplePhase = (rippleAcross + rippleMeander) * 6.1;
       float ripplePhaseFine = (rippleAcross * 3.3 + rippleMeander * 0.4) * 6.1;
 
+      // Megaripples: the metre-scale corrugations that survive at distance and
+      // give a dune sheet its texture long after the fine ripples have faded.
+      float megaPhase = (rippleAcross + rippleMeander * 1.6) * 0.92;
+      float megaValue = sin(megaPhase) * 0.6 + sin(megaPhase * 0.41 + 2.1) * 0.4;
+      float megaFade = (1.0 - smoothstep(240.0, 900.0, vTerrainViewDistance))
+        * clamp(1.6 - fwidth(megaPhase) * 1.4, 0.0, 1.0);
+
       float rippleDistanceFade = 1.0 - smoothstep(55.0, 260.0, vTerrainViewDistance);
       float rippleAliasFade = clamp(1.4 - fwidth(ripplePhase) * 0.9, 0.0, 1.0);
       float rippleStrength = rippleDistanceFade * rippleAliasFade
         * (0.42 + 0.58 * uWindStrength) * pow(vTerrainFlatness, 2.0);
+      float megaStrength = megaFade * (0.5 + 0.5 * uWindStrength) * pow(vTerrainFlatness, 1.5);
 
       float rippleValue = sin(ripplePhase) + sin(ripplePhaseFine) * 0.35;
-      float rippleSlope = (cos(ripplePhase) * 6.1 * 0.021 + cos(ripplePhaseFine) * 20.1 * 0.004) * rippleStrength;
+      float rippleSlope = (cos(ripplePhase) * 6.1 * 0.021 + cos(ripplePhaseFine) * 20.1 * 0.004) * rippleStrength
+        + cos(megaPhase) * 0.92 * 0.075 * megaStrength;
 
-      float selfShadow = texture2D(uSelfShadowMap, vTerrainUv).r;
+      // Avalanche streaks: slip faces are grooved down the fall line, never rippled.
+      float slipStreak = sandNoise(vec2(rippleAcross * 1.7, rippleAlong * 0.16)) - 0.5;
+      float slipAmount = (1.0 - vTerrainFlatness) * (1.0 - smoothstep(140.0, 420.0, vTerrainViewDistance));
+
+      vec2 terrainLighting = texture2D(uSelfShadowMap, vTerrainUv).rg;
+      float selfShadow = terrainLighting.x;
+      float skyOpenness = terrainLighting.y;
       diffuseColor.rgb *= mix(uShadeTint, vec3(1.0), selfShadow);
 
       // slip faces are coarser, darker, unrippled sand
@@ -701,6 +773,33 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       float macroTone = sandNoise(vTerrainWorldXZ * 0.0055) * 0.5 + sandNoise(vTerrainWorldXZ * 0.021) * 0.5;
       diffuseColor.rgb *= 0.90 + 0.20 * macroTone;
       diffuseColor.rgb *= 1.0 + rippleValue * 0.055 * rippleStrength;
+      diffuseColor.rgb *= 1.0 + megaValue * 0.045 * megaStrength;
+      diffuseColor.rgb *= 1.0 + slipStreak * 0.14 * slipAmount;
+    `)
+    .replace('#include <fog_fragment>', /* glsl */`
+      // Dust settles: haze is dense in the troughs and thin over the crests, so
+      // far dunes stack in layers instead of fading uniformly.
+      #ifdef USE_FOG
+        float hazeStratification = mix(0.42, 1.45,
+          exp(-max(vTerrainWorldHeight + 12.0, 0.0) / uHazeScaleHeight));
+        float stratifiedDensity = fogDensity * hazeStratification;
+        float stratifiedFog = 1.0 - exp(-stratifiedDensity * stratifiedDensity * vFogDepth * vFogDepth);
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, clamp(stratifiedFog, 0.0, 1.0));
+      #endif
+    `)
+    .replace('#include <aomap_fragment>', /* glsl */`
+      #include <aomap_fragment>
+      // baked sky openness dims only the indirect term, never the sun
+      reflectedLight.indirectDiffuse *= mix(1.0, skyOpenness, 0.8) * uSkylightIntensity;
+
+      float towardsSun = max(dot(-vTerrainViewDir, uSunDirectionWorld), 0.0);
+      float grazing = 1.0 - abs(dot(vTerrainViewDir, vTerrainWorldNormal));
+      float forwardScatter = pow(towardsSun, 5.0) * pow(grazing, 2.5) * selfShadow;
+      reflectedLight.directDiffuse += uSunTint * forwardScatter * 0.55 * diffuseColor.rgb;
+
+      // dry quartz keeps a faint sheen at glancing angles
+      float sandSheen = pow(grazing, 4.0) * selfShadow * (0.35 + 0.65 * vTerrainFlatness);
+      reflectedLight.directSpecular += uSunTint * sandSheen * 0.10;
     `)
     .replace('#include <normal_fragment_begin>', /* glsl */`
       #include <normal_fragment_begin>
@@ -761,33 +860,63 @@ function buildNormalRows(sourceGrid, targetNormals, firstRow, lastRow) {
 const SHADOW_MARCH_STEPS = 30;
 const SHADOW_STEP_GROWTH = 1.12;
 
+/* Eight-direction horizon scan. The highest blocking angle found in each
+   direction gives both the sky openness (ambient occlusion) and, together with
+   the sun march, a dune that shades its own hollows. */
+const AO_DIRECTIONS = [];
+for (let sector = 0; sector < 8; sector++) {
+  AO_DIRECTIONS.push([Math.cos(sector * Math.PI / 4), Math.sin(sector * Math.PI / 4)]);
+}
+const AO_SAMPLE_DISTANCES = [2, 5, 10, 19, 34];
+
 function bakeShadowRows(sourceGrid, targetBytes, firstRow, lastRow, marchX, marchZ, tangentElevation) {
-  if (tangentElevation <= 0.004) {
-    targetBytes.fill(255, firstRow * TERRAIN_VERTS_PER_SIDE, lastRow * TERRAIN_VERTS_PER_SIDE);
-    return;
-  }
+  const sunLit = tangentElevation > 0.004;
   const stepX = marchX / TERRAIN_CELL;
   const stepZ = marchZ / TERRAIN_CELL;
   for (let row = firstRow; row < lastRow; row++) {
     const rowBase = row * TERRAIN_VERTS_PER_SIDE;
     for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
       const baseHeight = sourceGrid[rowBase + column];
-      let strongestBlocker = 0;
-      let marchDistance = 0;
-      let stepLength = TERRAIN_CELL;
-      for (let step = 0; step < SHADOW_MARCH_STEPS; step++) {
-        marchDistance += stepLength;
-        stepLength *= SHADOW_STEP_GROWTH;
-        const sampleColumn = (column + stepX * marchDistance) | 0;
-        if (sampleColumn < 0 || sampleColumn >= TERRAIN_VERTS_PER_SIDE) break;
-        const sampleRow = (row + stepZ * marchDistance) | 0;
-        if (sampleRow < 0 || sampleRow >= TERRAIN_VERTS_PER_SIDE) break;
-        const excess = sourceGrid[sampleRow * TERRAIN_VERTS_PER_SIDE + sampleColumn]
-          - (baseHeight + marchDistance * tangentElevation);
-        if (excess > strongestBlocker) strongestBlocker = excess;
+      const writeIndex = (rowBase + column) * 2;
+
+      let litFraction = 1;
+      if (sunLit) {
+        let strongestBlocker = 0;
+        let marchDistance = 0;
+        let stepLength = TERRAIN_CELL;
+        for (let step = 0; step < SHADOW_MARCH_STEPS; step++) {
+          marchDistance += stepLength;
+          stepLength *= SHADOW_STEP_GROWTH;
+          const sampleColumn = (column + stepX * marchDistance) | 0;
+          if (sampleColumn < 0 || sampleColumn >= TERRAIN_VERTS_PER_SIDE) break;
+          const sampleRow = (row + stepZ * marchDistance) | 0;
+          if (sampleRow < 0 || sampleRow >= TERRAIN_VERTS_PER_SIDE) break;
+          const excess = sourceGrid[sampleRow * TERRAIN_VERTS_PER_SIDE + sampleColumn]
+            - (baseHeight + marchDistance * tangentElevation);
+          if (excess > strongestBlocker) strongestBlocker = excess;
+        }
+        litFraction = 1 - Math.min(strongestBlocker / 3.4, 1);
       }
-      const litFraction = 1 - Math.min(strongestBlocker / 3.4, 1);
-      targetBytes[rowBase + column] = (litFraction * 255) | 0;
+      targetBytes[writeIndex] = (litFraction * 255) | 0;
+
+      let openness = 0;
+      for (let direction = 0; direction < 8; direction++) {
+        const directionX = AO_DIRECTIONS[direction][0];
+        const directionZ = AO_DIRECTIONS[direction][1];
+        let highestSlope = 0;
+        for (let sample = 0; sample < AO_SAMPLE_DISTANCES.length; sample++) {
+          const cells = AO_SAMPLE_DISTANCES[sample];
+          const sampleColumn = (column + directionX * cells) | 0;
+          const sampleRow = (row + directionZ * cells) | 0;
+          if (sampleColumn < 0 || sampleColumn >= TERRAIN_VERTS_PER_SIDE) continue;
+          if (sampleRow < 0 || sampleRow >= TERRAIN_VERTS_PER_SIDE) continue;
+          const slope = (sourceGrid[sampleRow * TERRAIN_VERTS_PER_SIDE + sampleColumn] - baseHeight)
+            / (cells * TERRAIN_CELL);
+          if (slope > highestSlope) highestSlope = slope;
+        }
+        openness += 1 - highestSlope / Math.sqrt(1 + highestSlope * highestSlope);
+      }
+      targetBytes[writeIndex + 1] = Math.min(255, (openness / 8) * 255) | 0;
     }
   }
 }
@@ -802,13 +931,16 @@ function blurShadowRowsHorizontal(sourceBytes, targetBytes, firstRow, lastRow) {
     for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
       let total = 0;
       let taps = 0;
+      let totalAmbient = 0;
       for (let offset = -SHADOW_BLUR_RADIUS; offset <= SHADOW_BLUR_RADIUS; offset++) {
         const sampleColumn = column + offset;
         if (sampleColumn < 0 || sampleColumn >= TERRAIN_VERTS_PER_SIDE) continue;
-        total += sourceBytes[rowBase + sampleColumn];
+        total += sourceBytes[(rowBase + sampleColumn) * 2];
+        totalAmbient += sourceBytes[(rowBase + sampleColumn) * 2 + 1];
         taps++;
       }
-      targetBytes[rowBase + column] = (total / taps) | 0;
+      targetBytes[(rowBase + column) * 2] = (total / taps) | 0;
+      targetBytes[(rowBase + column) * 2 + 1] = (totalAmbient / taps) | 0;
     }
   }
 }
@@ -819,13 +951,16 @@ function blurShadowRowsVertical(sourceBytes, targetBytes, firstRow, lastRow) {
     for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
       let total = 0;
       let taps = 0;
+      let totalAmbient = 0;
       for (let offset = -SHADOW_BLUR_RADIUS; offset <= SHADOW_BLUR_RADIUS; offset++) {
         const sampleRow = row + offset;
         if (sampleRow < 0 || sampleRow >= TERRAIN_VERTS_PER_SIDE) continue;
-        total += sourceBytes[sampleRow * TERRAIN_VERTS_PER_SIDE + column];
+        total += sourceBytes[(sampleRow * TERRAIN_VERTS_PER_SIDE + column) * 2];
+        totalAmbient += sourceBytes[(sampleRow * TERRAIN_VERTS_PER_SIDE + column) * 2 + 1];
         taps++;
       }
-      targetBytes[rowBase + column] = (total / taps) | 0;
+      targetBytes[(rowBase + column) * 2] = (total / taps) | 0;
+      targetBytes[(rowBase + column) * 2 + 1] = (totalAmbient / taps) | 0;
     }
   }
 }
@@ -871,7 +1006,7 @@ function advanceTerrainJob(millisecondBudget) {
       if (terrainJob.row >= TERRAIN_VERTS_PER_SIDE) { terrainJob.stage = 'shadow'; terrainJob.row = 0; }
     } else if (terrainJob.stage === 'shadow') {
       const sourceGrid = terrainJob.recentring ? terrainHeightGridBack : terrainHeightGrid;
-      const lastRow = Math.min(terrainJob.row + 16, TERRAIN_VERTS_PER_SIDE);
+      const lastRow = Math.min(terrainJob.row + 8, TERRAIN_VERTS_PER_SIDE);
       bakeShadowRows(sourceGrid, terrainShadowBack, terrainJob.row, lastRow,
         terrainJob.marchX, terrainJob.marchZ, terrainJob.tangentElevation);
       terrainJob.row = lastRow;
@@ -948,12 +1083,69 @@ const camelHideBase = new THREE.Color().setHex(0xc7a075, THREE.SRGBColorSpace);
 const CAMEL_HIDE_VARIANTS = [0xc7a075, 0xb68c5c, 0xd8b98d, 0xa87d55, 0xcfa87c];
 const ROBE_VARIANTS = [0x3a55ad, 0x2d4291, 0x4459a8, 0x27397f, 0x4a4494];
 
+const hideUniforms = {
+  uSunDirectionWorld: { value: new THREE.Vector3(0, 1, 0) },
+  uRimTint: { value: new THREE.Color(1, 0.8, 0.55) }
+};
+
+/* Coat shading. Two things sell a backlit animal: broken, mottled albedo
+   instead of one flat colour, and the bright fringe where low sun scatters
+   through the hair at the silhouette edge. */
+function applyHideShading(material) {
+  material.onBeforeCompile = (shaderProgram) => {
+    Object.assign(shaderProgram.uniforms, hideUniforms);
+    shaderProgram.vertexShader = shaderProgram.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vHideWorldPosition;
+        varying vec3 vHideWorldNormal;
+        varying vec3 vHideViewDir;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vec4 hideWorldPosition = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
+        vHideWorldPosition = hideWorldPosition.xyz;
+        vHideWorldNormal = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal);
+        vHideViewDir = normalize(cameraPosition - hideWorldPosition.xyz);`);
+    shaderProgram.fragmentShader = shaderProgram.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vHideWorldPosition;
+        varying vec3 vHideWorldNormal;
+        varying vec3 vHideViewDir;
+        uniform vec3 uSunDirectionWorld;
+        uniform vec3 uRimTint;
+        float hideHash(vec3 cellCoord) {
+          return fract(sin(dot(cellCoord, vec3(21.98, 78.23, 41.17))) * 43758.5453);
+        }
+        float hideNoise(vec3 point) {
+          vec3 cell = floor(point);
+          vec3 local = fract(point);
+          local = local * local * (3.0 - 2.0 * local);
+          float c000 = hideHash(cell), c100 = hideHash(cell + vec3(1.0, 0.0, 0.0));
+          float c010 = hideHash(cell + vec3(0.0, 1.0, 0.0)), c110 = hideHash(cell + vec3(1.0, 1.0, 0.0));
+          float c001 = hideHash(cell + vec3(0.0, 0.0, 1.0)), c101 = hideHash(cell + vec3(1.0, 0.0, 1.0));
+          float c011 = hideHash(cell + vec3(0.0, 1.0, 1.0)), c111 = hideHash(cell + vec3(1.0, 1.0, 1.0));
+          return mix(mix(mix(c000, c100, local.x), mix(c010, c110, local.x), local.y),
+                     mix(mix(c001, c101, local.x), mix(c011, c111, local.x), local.y), local.z);
+        }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float coatMottle = hideNoise(vHideWorldPosition * 3.1) * 0.6
+                         + hideNoise(vHideWorldPosition * 11.0) * 0.4;
+        diffuseColor.rgb *= 0.86 + 0.28 * coatMottle;`)
+      .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+        // a true rim: only the silhouette edge, and only when looking into the sun
+        float coatRim = pow(1.0 - abs(dot(vHideViewDir, vHideWorldNormal)), 5.0)
+          * pow(max(dot(-vHideViewDir, uSunDirectionWorld), 0.0), 2.0);
+        reflectedLight.directDiffuse += uRimTint * coatRim * 1.6 * diffuseColor.rgb;`);
+  };
+  return material;
+}
+
 function makeStandardPart(geometry, hexColor, instanceCount, options = {}) {
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color().setHex(hexColor, THREE.SRGBColorSpace),
     roughness: options.roughness !== undefined ? options.roughness : 0.88,
-    metalness: 0.0
+    metalness: 0.0,
+    envMapIntensity: 0.75
   });
+  if (options.hideShading !== false) applyHideShading(material);
   const mesh = new THREE.InstancedMesh(geometry, material, instanceCount);
   mesh.castShadow = true;
   mesh.receiveShadow = options.receiveShadow === true;
@@ -964,13 +1156,21 @@ function makeStandardPart(geometry, hexColor, instanceCount, options = {}) {
 }
 
 // --- geometries -----------------------------------------------------------
-const camelBodyGeometry = new THREE.CapsuleGeometry(0.44, 1.02, 7, 18)
-  .rotateX(Math.PI / 2).scale(0.88, 0.95, 1.0);
+const camelBodyGeometry = mergeGeometries([
+  new THREE.CapsuleGeometry(0.44, 1.02, 9, 22).rotateX(Math.PI / 2).scale(0.88, 0.95, 1.0),
+  // brisket: the keel of chest tissue a dromedary rests on
+  new THREE.SphereGeometry(0.30, 12, 9).scale(0.72, 0.86, 1.05).translate(0, -0.30, 0.52),
+  // shoulder mass where the neck meets the body
+  new THREE.SphereGeometry(0.34, 12, 9).scale(0.86, 0.92, 0.86).translate(0, 0.16, 0.62)
+], false);
 
-const camelHumpGeometry = new THREE.SphereGeometry(0.42, 16, 12).scale(0.64, 0.88, 0.82);
+const camelHumpGeometry = new THREE.SphereGeometry(0.42, 20, 14).scale(0.64, 0.88, 0.82);
 
-const camelNeckLowerGeometry = makeRisingLimbGeometry(0.27, 0.20, 0.72, 12);
-const camelNeckUpperGeometry = makeRisingLimbGeometry(0.20, 0.145, 0.62, 12);
+const camelNeckLowerGeometry = mergeGeometries([
+  makeRisingLimbGeometry(0.27, 0.20, 0.72, 16),
+  new THREE.SphereGeometry(0.21, 14, 10).translate(0, 0.72, 0)
+], false);
+const camelNeckUpperGeometry = makeRisingLimbGeometry(0.20, 0.145, 0.62, 16);
 
 const camelHeadGeometry = mergeGeometries([
   new THREE.SphereGeometry(0.155, 14, 11).scale(0.86, 1.0, 1.1),
@@ -979,10 +1179,24 @@ const camelHeadGeometry = mergeGeometries([
   new THREE.ConeGeometry(0.036, 0.11, 7).rotateX(-0.25).translate(0.085, 0.15, -0.04)
 ], false);
 
-const camelLegUpperGeometry = makeLimbGeometry(0.115, 0.082, 0.85, 7);
-const camelLegLowerGeometry = makeLimbGeometry(0.072, 0.052, 0.80, 6);
-const camelFootGeometry = new THREE.SphereGeometry(0.115, 8, 6).scale(1.0, 0.42, 1.3).translate(0, -0.04, 0.03);
-const camelTailGeometry = makeLimbGeometry(0.042, 0.018, 0.55, 5);
+const camelLegUpperGeometry = mergeGeometries([
+  makeLimbGeometry(0.115, 0.082, 0.85, 14),
+  new THREE.SphereGeometry(0.135, 14, 10).scale(0.92, 1.0, 1.0),                 // shoulder / haunch
+  new THREE.SphereGeometry(0.086, 12, 9).translate(0, -0.85, 0)                 // knee / stifle
+], false);
+const camelLegLowerGeometry = mergeGeometries([
+  makeLimbGeometry(0.072, 0.050, 0.80, 12),
+  new THREE.SphereGeometry(0.062, 10, 8).translate(0, -0.80, 0)                 // fetlock
+], false);
+// splayed, broad pad — the foot a camel actually walks on
+const camelFootGeometry = mergeGeometries([
+  new THREE.SphereGeometry(0.128, 10, 7).scale(1.05, 0.40, 1.35).translate(0, -0.04, 0.035),
+  new THREE.SphereGeometry(0.062, 8, 6).scale(1.0, 0.7, 1.0).translate(0, 0.02, -0.05)
+], false);
+const camelTailGeometry = mergeGeometries([
+  makeLimbGeometry(0.042, 0.018, 0.55, 6),
+  new THREE.SphereGeometry(0.045, 8, 6).scale(0.8, 1.5, 0.8).translate(0, -0.55, 0)  // tuft
+], false);
 
 const saddleGeometry = mergeGeometries([
   new THREE.BoxGeometry(0.74, 0.12, 0.92).translate(0, 0, 0),
@@ -1232,6 +1446,48 @@ for (let printIndex = 0; printIndex < FOOTPRINT_COUNT; printIndex++) {
 }
 footprintMesh.instanceMatrix.needsUpdate = true;
 
+/* Foot contact patches. A shadow map alone leaves animals looking pasted onto
+   the sand at grazing sun angles; a small pressed-in darkening under each
+   planted hoof is what actually seats them. */
+const contactPatchGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const contactPatchMaterial = new THREE.ShaderMaterial({
+  uniforms: { uContactColor: { value: new THREE.Color(0.18, 0.13, 0.10) } },
+  transparent: true,
+  depthWrite: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -4,
+  polygonOffsetUnits: -4,
+  vertexShader: /* glsl */`
+    varying vec2 vContactUv;
+    void main() {
+      vContactUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision mediump float;
+    uniform vec3 uContactColor;
+    varying vec2 vContactUv;
+    void main() {
+      float radial = length((vContactUv - 0.5) * 2.0);
+      float alpha = smoothstep(1.0, 0.05, radial) * 0.55;
+      if (alpha < 0.004) discard;
+      gl_FragColor = vec4(uContactColor, alpha);
+    }
+  `
+});
+const contactPatchMesh = new THREE.InstancedMesh(contactPatchGeometry, contactPatchMaterial, MAX_CAMELS * 4);
+contactPatchMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+contactPatchMesh.frustumCulled = false;
+contactPatchMesh.renderOrder = 1;
+scene.add(contactPatchMesh);
+
+const contactPatchPosition = new THREE.Vector3();
+const contactPatchQuaternion = new THREE.Quaternion();
+const contactPatchScale = new THREE.Vector3();
+const contactPatchMatrix = new THREE.Matrix4();
+const contactPatchNormal = new THREE.Vector3();
+
 let footprintCursor = 0;
 let lastFootprintAlong = 0;
 
@@ -1445,6 +1701,7 @@ function updateCaravan(sceneTime) {
         camelLegUpperMesh.setMatrixAt(camelIndex * 4 + legIndex, ZERO_MATRIX);
         camelLegLowerMesh.setMatrixAt(camelIndex * 4 + legIndex, ZERO_MATRIX);
         camelFootMesh.setMatrixAt(camelIndex * 4 + legIndex, ZERO_MATRIX);
+        contactPatchMesh.setMatrixAt(camelIndex * 4 + legIndex, ZERO_MATRIX);
       }
       continue;
     }
@@ -1529,12 +1786,31 @@ function updateCaravan(sceneTime) {
     saddleMesh.setMatrixAt(camelIndex, camelRig.saddleNode.matrixWorld);
 
     for (let legIndex = 0; legIndex < 4; legIndex++) {
-      camelLegUpperMesh.setMatrixAt(camelIndex * 4 + legIndex, camelRig.legUpperNodes[legIndex].matrixWorld);
-      camelLegLowerMesh.setMatrixAt(camelIndex * 4 + legIndex, camelRig.legLowerNodes[legIndex].matrixWorld);
-      camelFootMesh.setMatrixAt(camelIndex * 4 + legIndex, camelRig.footNodes[legIndex].matrixWorld);
+      const legInstance = camelIndex * 4 + legIndex;
+      camelLegUpperMesh.setMatrixAt(legInstance, camelRig.legUpperNodes[legIndex].matrixWorld);
+      camelLegLowerMesh.setMatrixAt(legInstance, camelRig.legLowerNodes[legIndex].matrixWorld);
+      camelFootMesh.setMatrixAt(legInstance, camelRig.footNodes[legIndex].matrixWorld);
+
+      contactPatchPosition.setFromMatrixPosition(camelRig.footNodes[legIndex].matrixWorld);
+      const groundHeight = terrainHeightAt(contactPatchPosition.x, contactPatchPosition.z);
+      const hoofLift = Math.max(0, contactPatchPosition.y - groundHeight);
+      const plantedAmount = 1 - THREE.MathUtils.clamp(hoofLift / 0.42, 0, 1);
+      if (plantedAmount <= 0.02) {
+        contactPatchMesh.setMatrixAt(legInstance, ZERO_MATRIX);
+      } else {
+        contactPatchPosition.y = groundHeight + 0.03;
+        terrainNormalAt(contactPatchPosition.x, contactPatchPosition.z, contactPatchNormal);
+        contactPatchQuaternion.setFromUnitVectors(footprintUpAxis, contactPatchNormal);
+        const patchRadius = (0.52 + 0.36 * plantedAmount) * camelScales[camelIndex];
+        contactPatchScale.set(patchRadius, 1, patchRadius * 1.15);
+        contactPatchMatrix.compose(contactPatchPosition, contactPatchQuaternion, contactPatchScale);
+        contactPatchMesh.setMatrixAt(legInstance, contactPatchMatrix);
+      }
     }
 
-    if (camelHasRider[camelIndex]) {
+    // in first person you are the lead rider, so his own body is not drawn
+    const hideOwnBody = camelIndex === 0 && activeCameraMode === 'pov';
+    if (camelHasRider[camelIndex] && !hideOwnBody) {
       riderRobeMesh.setMatrixAt(camelIndex, camelRig.riderNode.matrixWorld);
       riderHeadMesh.setMatrixAt(camelIndex, camelRig.riderHeadNode.matrixWorld);
       riderVeilMesh.setMatrixAt(camelIndex, camelRig.riderHeadNode.matrixWorld);
@@ -1544,8 +1820,9 @@ function updateCaravan(sceneTime) {
       riderRobeMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
       riderHeadMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
       riderVeilMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
-      cargoMesh.setMatrixAt(camelIndex * 2, camelRig.cargoNodes[0].matrixWorld);
-      cargoMesh.setMatrixAt(camelIndex * 2 + 1, camelRig.cargoNodes[1].matrixWorld);
+      const carriesCargo = !camelHasRider[camelIndex];
+      cargoMesh.setMatrixAt(camelIndex * 2, carriesCargo ? camelRig.cargoNodes[0].matrixWorld : ZERO_MATRIX);
+      cargoMesh.setMatrixAt(camelIndex * 2 + 1, carriesCargo ? camelRig.cargoNodes[1].matrixWorld : ZERO_MATRIX);
     }
 
     if (camelIndex === 0) {
@@ -1565,7 +1842,7 @@ function updateCaravan(sceneTime) {
 
   for (const animatedMesh of [camelBodyMesh, camelHumpMesh, camelNeckLowerMesh, camelNeckUpperMesh,
     camelHeadMesh, camelTailMesh, camelLegUpperMesh, camelLegLowerMesh, camelFootMesh,
-    saddleMesh, cargoMesh, riderRobeMesh, riderHeadMesh, riderVeilMesh]) {
+    saddleMesh, cargoMesh, riderRobeMesh, riderHeadMesh, riderVeilMesh, contactPatchMesh]) {
     animatedMesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -1613,9 +1890,9 @@ function computeDesiredCameraPose(sceneTime) {
   } else if (activeCameraMode === 'pov') {
     // over the rider's shoulder, so his camel's head sweeps the lower frame
     desiredCameraPosition.copy(leadRiderHeadPosition)
-      .addScaledVector(leadRiderForward, -0.12)
-      .addScaledVector(worldUpAxis, 0.52)
-      .addScaledVector(cameraRightAxis, 0.55);
+      .addScaledVector(leadRiderForward, 0.46)
+      .addScaledVector(worldUpAxis, 0.44)
+      .addScaledVector(cameraRightAxis, 0.42);
     desiredCameraTarget.copy(leadRiderHeadPosition)
       .addScaledVector(leadRiderForward, 55)
       .addScaledVector(cameraRightAxis, 7.0)
@@ -1713,9 +1990,17 @@ function applySkyState() {
   sunLight.intensity = skyState.sunIntensity;
   sunLight.castShadow = skyState.sunIntensity > 0.35;
 
-  hemisphereLight.color.copy(skyState.hemiSky);
-  hemisphereLight.groundColor.copy(skyState.hemiGround);
-  hemisphereLight.intensity = skyState.hemiIntensity;
+  sandBounceLight.color.copy(skyState.sunLight).lerp(skyState.hemiGround, 0.5);
+  sandBounceLight.intensity = 0.05 + skyState.sunIntensity * 0.035;
+  skyUniforms.uGroundBounceColor.value
+    .copy(skyState.hemiGround)
+    .multiplyScalar(0.14 + skyState.hemiIntensity * 0.22);
+  terrainUniforms.uSkylightIntensity.value = 0.55 + skyState.hemiIntensity * 0.35;
+  terrainUniforms.uSunDirectionWorld.value.copy(sunDirection);
+  hideUniforms.uSunDirectionWorld.value.copy(sunDirection);
+  hideUniforms.uRimTint.value.copy(skyState.sunLight).multiplyScalar(skyState.sunIntensity * 0.30);
+  terrainUniforms.uSunTint.value.copy(skyState.sunLight).multiplyScalar(skyState.sunIntensity * 0.45);
+  environmentDirty = true;
 
   fogState.color.copy(skyState.fog);
   fogState.density = skyState.fogDensity + caravanState.windStrength * 0.0011;
@@ -1728,9 +2013,17 @@ function applySkyState() {
 }
 
 function updateShadowCamera() {
-  shadowFocusPoint.copy(caravanCenterPoint);
+  // Focus the frustum on the stretch of caravan the camera is looking at rather
+  // than the whole 300 m line: same map, roughly triple the texel density.
+  const cameraAlong = duneAlongOf(camera.position.x, camera.position.z);
+  const leadAlong = caravanState.alongDistance;
+  const tailAlong = leadAlong - (caravanState.camelCount - 1) * CAMEL_SPACING;
+  caravanPathPoint(THREE.MathUtils.clamp(cameraAlong, tailAlong, leadAlong), shadowFocusPoint);
+
   const elevationRadians = Math.max(THREE.MathUtils.degToRad(skyState.sunElevation), 0.02);
-  const shadowExtent = THREE.MathUtils.clamp(58 / Math.tan(elevationRadians), 95, 235);
+  const stretchExtent = 42 / Math.tan(elevationRadians);
+  const viewExtent = camera.position.distanceTo(shadowFocusPoint) * 0.62;
+  const shadowExtent = THREE.MathUtils.clamp(Math.max(stretchExtent, viewExtent), 62, 250);
   const shadowCamera = sunLight.shadow.camera;
   shadowCamera.left = -shadowExtent;
   shadowCamera.right = shadowExtent;
@@ -1743,6 +2036,12 @@ function updateShadowCamera() {
   sunLight.target.position.copy(shadowFocusPoint);
   sunLight.target.updateMatrixWorld();
   sunLight.position.copy(shadowFocusPoint).addScaledVector(sunDirection, 420);
+
+  sandBounceLight.target.position.copy(shadowFocusPoint);
+  sandBounceLight.target.updateMatrixWorld();
+  sandBounceLight.position.copy(shadowFocusPoint)
+    .addScaledVector(sunHorizontalDirection, 40)
+    .addScaledVector(worldUpAxis, -30);
 }
 
 const streakScreenAxis = new THREE.Vector2(1, 0);
@@ -1908,6 +2207,7 @@ function tick() {
   }
   advanceTerrainJob(4.5);
 
+  if (environmentDirty) refreshEnvironmentProbe(performance.now());
   renderer.render(scene, camera);
 
   // frame statistics + adaptive resolution
