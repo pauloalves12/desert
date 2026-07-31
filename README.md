@@ -64,8 +64,8 @@ Keys `1`–`5` switch cameras; `H` collapses the panel.
 
 ## Performance
 
-21 draw calls and ~560k triangles with the full 40-camel caravan; CPU simulation
-costs about 1.0 ms per frame (2.3 ms at the 95th percentile, 4.1 ms worst case
+21 draw calls and ~700k triangles with the full 40-camel caravan; CPU simulation
+costs about 1.0 ms per frame (1.9 ms at the 95th percentile, 3.9 ms worst case
 while a terrain slice rebakes). The sky is drawn after the opaque pass, so the
 cloud layer only shades pixels that are actually sky. Device pixel ratio is
 clamped to 2 and steps down automatically if the frame rate drops.

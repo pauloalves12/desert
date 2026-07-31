@@ -631,7 +631,7 @@ scene.add(sandBounceLight.target);
    ========================================================================== */
 
 const TERRAIN_SIZE = 1600;
-const TERRAIN_SEGMENTS = 320;
+const TERRAIN_SEGMENTS = 416;
 const TERRAIN_VERTS_PER_SIDE = TERRAIN_SEGMENTS + 1;
 const TERRAIN_VERT_COUNT = TERRAIN_VERTS_PER_SIDE * TERRAIN_VERTS_PER_SIDE;
 const TERRAIN_CELL = TERRAIN_SIZE / TERRAIN_SEGMENTS;
@@ -840,8 +840,9 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
          directly, but it is near constant across a triangle and jumps at every
          triangle edge — which printed the terrain's own quad grid into the sand
          as flat patches of missing ripple. This estimate is continuous. */
+      float terrainIncidence = abs(dot(vTerrainViewDir, vTerrainWorldNormal));
       float terrainPixelFootprint = vTerrainViewDistance * uPixelAngle
-        / max(abs(dot(vTerrainViewDir, vTerrainWorldNormal)), 0.12);
+        / (0.42 + 0.58 * terrainIncidence);
 
       float rippleAliasFade = 1.0 - smoothstep(0.16, 0.52, terrainPixelFootprint);
       float fineAliasFade = 1.0 - smoothstep(0.05, 0.17, terrainPixelFootprint);
@@ -849,9 +850,9 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       float rippleHorizonLimit = 1.0 - smoothstep(320.0, 900.0, vTerrainViewDistance);
 
       float rippleStrength = rippleAliasFade * rippleHorizonLimit
-        * (0.42 + 0.58 * uWindStrength) * pow(vTerrainFlatness, 2.0);
+        * (0.42 + 0.58 * uWindStrength) * smoothstep(0.30, 0.80, vTerrainFlatness);
       float megaStrength = megaAliasFade * rippleHorizonLimit
-        * (0.5 + 0.5 * uWindStrength) * pow(vTerrainFlatness, 1.5);
+        * (0.5 + 0.5 * uWindStrength) * smoothstep(0.22, 0.72, vTerrainFlatness);
 
       float rippleValue = sin(ripplePhase) + sin(ripplePhaseFine) * 0.35 * fineAliasFade;
       float rippleSlope = (cos(ripplePhase) * 6.1 * 0.021
@@ -887,8 +888,8 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       diffuseColor.rgb *= mix(uShadeTint, vec3(1.0), selfShadow);
 
       // slip faces are coarser, darker, unrippled sand
-      float slipFace = 1.0 - vTerrainFlatness;
-      diffuseColor.rgb *= mix(vec3(1.0), vec3(0.83, 0.79, 0.79), slipFace * 0.75);
+      float slipFace = smoothstep(0.10, 0.55, 1.0 - vTerrainFlatness);
+      diffuseColor.rgb *= mix(vec3(1.0), vec3(0.83, 0.79, 0.79), slipFace * 0.7);
 
       // broad tonal drift across the sand sheet
       float macroTone = clamp(sandGradientFbm(vTerrainWorldXZ * 0.0055) * 0.9 + 0.5, 0.0, 1.0);
@@ -920,12 +921,12 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, vec3(indirectLuminance), 0.42);
 
       float towardsSun = max(dot(-vTerrainViewDir, uSunDirectionWorld), 0.0);
-      float grazing = 1.0 - abs(dot(vTerrainViewDir, vTerrainWorldNormal));
-      float forwardScatter = pow(towardsSun, 5.0) * pow(grazing, 2.5) * selfShadow;
+      float grazing = 1.0 - terrainIncidence;
+      float forwardScatter = pow(towardsSun, 5.0) * smoothstep(0.25, 0.95, grazing) * selfShadow;
       reflectedLight.directDiffuse += uSunTint * forwardScatter * 0.55 * diffuseColor.rgb;
 
       // dry quartz keeps a faint sheen at glancing angles
-      float sandSheen = pow(grazing, 4.0) * selfShadow * (0.35 + 0.65 * vTerrainFlatness);
+      float sandSheen = smoothstep(0.45, 1.0, grazing) * selfShadow * (0.35 + 0.65 * vTerrainFlatness);
       reflectedLight.directSpecular += uSunTint * sandSheen * 0.10;
     `)
     .replace('#include <normal_fragment_begin>', /* glsl */`
