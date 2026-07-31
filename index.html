@@ -612,7 +612,7 @@ const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
 sunLight.castShadow = true;
 sunLight.shadow.mapSize.set(3072, 3072);
 sunLight.shadow.bias = -0.0006;
-sunLight.shadow.normalBias = 0.055;
+sunLight.shadow.normalBias = 0.075;
 sunLight.shadow.radius = 2.0;
 sunLight.shadow.camera.near = 1;
 sunLight.shadow.camera.far = 1400;
@@ -709,7 +709,8 @@ const terrainUniforms = {
   uSkylightIntensity: { value: 1.0 },
   uSunDirectionWorld: { value: new THREE.Vector3(0, 1, 0) },
   uSunTint: { value: new THREE.Color(1, 0.8, 0.6) },
-  uHazeScaleHeight: { value: 34.0 }
+  uHazeScaleHeight: { value: 34.0 },
+  uSelfShadowTexel: { value: 1 / TERRAIN_VERTS_PER_SIDE }
 };
 
 const terrainMaterial = new THREE.MeshStandardMaterial({
@@ -758,6 +759,7 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       varying vec3 vTerrainWorldNormal;
       varying float vTerrainWorldHeight;
       uniform sampler2D uSelfShadowMap;
+      uniform float uSelfShadowTexel;
       uniform float uHazeScaleHeight;
       uniform vec3 uSunDirectionWorld;
       uniform vec3 uSunTint;
@@ -770,6 +772,34 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
 
       float sandHash(vec2 cellCoord) {
         return fract(sin(dot(cellCoord, vec2(127.1, 311.7))) * 43758.5453);
+      }
+
+      vec2 sandGradientVector(vec2 cellCoord) {
+        float angle = fract(sin(dot(cellCoord, vec2(127.1, 311.7))) * 43758.5453) * 6.2831853;
+        return vec2(cos(angle), sin(angle));
+      }
+
+      /* Gradient noise rather than value noise. Value noise is flat along every
+         lattice line, so differentiating it for a surface normal prints a
+         square grid across the sand. */
+      float sandGradientNoise(vec2 point) {
+        vec2 cell = floor(point);
+        vec2 local = fract(point);
+        vec2 fade = local * local * local * (local * (local * 6.0 - 15.0) + 10.0);
+        float corner00 = dot(sandGradientVector(cell), local);
+        float corner10 = dot(sandGradientVector(cell + vec2(1.0, 0.0)), local - vec2(1.0, 0.0));
+        float corner01 = dot(sandGradientVector(cell + vec2(0.0, 1.0)), local - vec2(0.0, 1.0));
+        float corner11 = dot(sandGradientVector(cell + vec2(1.0, 1.0)), local - vec2(1.0, 1.0));
+        return mix(mix(corner00, corner10, fade.x), mix(corner01, corner11, fade.x), fade.y);
+      }
+
+      // successive octaves are rotated so no single lattice survives the sum
+      const mat2 SAND_OCTAVE_ROTATION = mat2(0.8, -0.6, 0.6, 0.8);
+
+      float sandGradientFbm(vec2 point) {
+        float total = sandGradientNoise(point);
+        total += 0.5 * sandGradientNoise(SAND_OCTAVE_ROTATION * point * 2.13);
+        return total * 0.667;
       }
       float sandNoise(vec2 point) {
         vec2 cell = floor(point);
@@ -819,18 +849,27 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       /* Mid-scale relief. The heightfield is smooth at ten-metre scale; a shallow
          noise gradient folded into the normal gives the sheet the soft lumpiness
          real dunes have between the ripples and the dune form itself. */
-      vec2 duneDetailUv = vTerrainWorldXZ * 0.115;
-      float duneDetailCentre = sandNoise(duneDetailUv);
-      float duneDetailX = sandNoise(duneDetailUv + vec2(0.34, 0.0));
-      float duneDetailZ = sandNoise(duneDetailUv + vec2(0.0, 0.34));
-      vec2 duneDetailGradient = vec2(duneDetailX - duneDetailCentre, duneDetailZ - duneDetailCentre) / 0.34;
+      vec2 duneDetailUv = vTerrainWorldXZ * 0.105;
+      float duneDetailCentre = sandGradientFbm(duneDetailUv);
+      float duneDetailX = sandGradientFbm(duneDetailUv + vec2(0.3, 0.0));
+      float duneDetailZ = sandGradientFbm(duneDetailUv + vec2(0.0, 0.3));
+      vec2 duneDetailGradient = vec2(duneDetailX - duneDetailCentre, duneDetailZ - duneDetailCentre) / 0.3;
       float duneDetailFade = (1.0 - smoothstep(140.0, 560.0, vTerrainViewDistance)) * vTerrainFlatness;
 
       // Avalanche streaks: slip faces are grooved down the fall line, never rippled.
-      float slipStreak = sandNoise(vec2(rippleAcross * 1.7, rippleAlong * 0.16)) - 0.5;
+      float slipStreak = sandGradientNoise(vec2(rippleAcross * 1.7, rippleAlong * 0.16));
       float slipAmount = (1.0 - vTerrainFlatness) * (1.0 - smoothstep(140.0, 420.0, vTerrainViewDistance));
 
-      vec2 terrainLighting = texture2D(uSelfShadowMap, vTerrainUv).rg;
+      /* A single bilinear tap leaves a visible kink on every texel boundary of
+         the 5 m bake grid. Four taps at half-texel offsets turn that into a
+         quadratic falloff, which reads as smooth sand. */
+      vec2 shadowTapOffset = vec2(uSelfShadowTexel * 0.5);
+      vec2 terrainLighting = (
+          texture2D(uSelfShadowMap, vTerrainUv + shadowTapOffset).rg
+        + texture2D(uSelfShadowMap, vTerrainUv - shadowTapOffset).rg
+        + texture2D(uSelfShadowMap, vTerrainUv + vec2(shadowTapOffset.x, -shadowTapOffset.y)).rg
+        + texture2D(uSelfShadowMap, vTerrainUv + vec2(-shadowTapOffset.x, shadowTapOffset.y)).rg
+      ) * 0.25;
       float selfShadow = terrainLighting.x;
       float skyOpenness = terrainLighting.y;
       diffuseColor.rgb *= mix(uShadeTint, vec3(1.0), selfShadow);
@@ -840,7 +879,7 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       diffuseColor.rgb *= mix(vec3(1.0), vec3(0.83, 0.79, 0.79), slipFace * 0.75);
 
       // broad tonal drift across the sand sheet
-      float macroTone = sandNoise(vTerrainWorldXZ * 0.0055) * 0.5 + sandNoise(vTerrainWorldXZ * 0.021) * 0.5;
+      float macroTone = clamp(sandGradientFbm(vTerrainWorldXZ * 0.0055) * 0.9 + 0.5, 0.0, 1.0);
       diffuseColor.rgb *= 0.90 + 0.20 * macroTone;
       diffuseColor.rgb *= 1.0 + rippleValue * 0.055 * rippleStrength;
       diffuseColor.rgb *= 1.0 + megaValue * 0.045 * megaStrength;
@@ -956,17 +995,26 @@ function bakeShadowRows(sourceGrid, targetBytes, firstRow, lastRow, marchX, marc
       const baseHeight = sourceGrid[rowBase + column];
       const writeIndex = (rowBase + column) * 2;
 
+      /* Neighbouring vertices marching in lockstep hit the same quantised
+         cells, which is what turns a soft shadow edge into a staircase of
+         rectangles. Offsetting each vertex's march start and giving it a small
+         lateral wobble turns that structure into noise, which the blur then
+         resolves into a smooth gradient. */
+      const marchJitter = hashLattice(column * 7 + 13, row * 5 + 29);
+      const lateralJitter = hashLattice(column * 3 + 61, row * 11 + 7) - 0.5;
+
       let litFraction = 1;
       if (sunLit) {
         let strongestBlocker = 0;
-        let marchDistance = 0;
-        let stepLength = TERRAIN_CELL;
+        let marchDistance = TERRAIN_CELL * marchJitter;
+        let stepLength = TERRAIN_CELL * (0.7 + marchJitter * 0.6);
         for (let step = 0; step < SHADOW_MARCH_STEPS; step++) {
           marchDistance += stepLength;
           stepLength *= SHADOW_STEP_GROWTH;
-          const sampleColumn = (column + stepX * marchDistance) | 0;
+          const lateral = lateralJitter * 1.6;
+          const sampleColumn = Math.round(column + stepX * marchDistance - stepZ * lateral);
           if (sampleColumn < 0 || sampleColumn >= TERRAIN_VERTS_PER_SIDE) break;
-          const sampleRow = (row + stepZ * marchDistance) | 0;
+          const sampleRow = Math.round(row + stepZ * marchDistance + stepX * lateral);
           if (sampleRow < 0 || sampleRow >= TERRAIN_VERTS_PER_SIDE) break;
           const excess = sourceGrid[sampleRow * TERRAIN_VERTS_PER_SIDE + sampleColumn]
             - (baseHeight + marchDistance * tangentElevation);
@@ -982,7 +1030,7 @@ function bakeShadowRows(sourceGrid, targetBytes, firstRow, lastRow, marchX, marc
         const directionZ = AO_DIRECTIONS[direction][1];
         let highestSlope = 0;
         for (let sample = 0; sample < AO_SAMPLE_DISTANCES.length; sample++) {
-          const cells = AO_SAMPLE_DISTANCES[sample];
+          const cells = AO_SAMPLE_DISTANCES[sample] * (0.75 + marchJitter * 0.5);
           const sampleColumn = (column + directionX * cells) | 0;
           const sampleRow = (row + directionZ * cells) | 0;
           if (sampleColumn < 0 || sampleColumn >= TERRAIN_VERTS_PER_SIDE) continue;
@@ -1000,7 +1048,7 @@ function bakeShadowRows(sourceGrid, targetBytes, firstRow, lastRow, marchX, marc
 
 // Separable blur — the ray march is quantised to grid cells, so raw shadow
 // boundaries come out stair-stepped. Two cheap passes smooth them out.
-const SHADOW_BLUR_RADIUS = 2;
+const SHADOW_BLUR_RADIUS = 3;
 
 function blurShadowRowsHorizontal(sourceBytes, targetBytes, firstRow, lastRow) {
   for (let row = firstRow; row < lastRow; row++) {
@@ -2236,7 +2284,7 @@ function updateShadowCamera() {
   const elevationRadians = Math.max(THREE.MathUtils.degToRad(skyState.sunElevation), 0.02);
   const stretchExtent = 42 / Math.tan(elevationRadians);
   const viewExtent = camera.position.distanceTo(shadowFocusPoint) * 0.62;
-  const shadowExtent = THREE.MathUtils.clamp(Math.max(stretchExtent, viewExtent), 62, 250);
+  const shadowExtent = THREE.MathUtils.clamp(Math.max(stretchExtent, viewExtent), 62, 190);
   const shadowCamera = sunLight.shadow.camera;
   shadowCamera.left = -shadowExtent;
   shadowCamera.right = shadowExtent;
