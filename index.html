@@ -1,0 +1,1942 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sahara — Tuareg Camel Caravan at Golden Hour</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%231d1410'/%3E%3Ccircle cx='16' cy='13' r='6' fill='%23f0a95c'/%3E%3Cpath d='M0 24 Q10 17 18 23 Q25 27 32 21 L32 32 L0 32 Z' fill='%23c8834a'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --ink: #f4e4cd;
+    --ink-dim: #c8ab86;
+    --panel: rgba(28, 18, 12, 0.62);
+    --line: rgba(240, 205, 150, 0.22);
+    --accent: #f0a95c;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: #0b0a12; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  #viewport { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #panel {
+    position: fixed;
+    top: max(14px, env(safe-area-inset-top));
+    left: max(14px, env(safe-area-inset-left));
+    width: 244px;
+    background: var(--panel);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 13px 13px;
+    z-index: 10;
+    box-shadow: 0 10px 34px rgba(0,0,0,0.42);
+    user-select: none;
+  }
+  #panel header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-bottom: 10px;
+  }
+  #panel h1 {
+    margin: 0; font-size: 11px; font-weight: 650; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  #toggle-panel {
+    all: unset; cursor: pointer; width: 20px; height: 20px; line-height: 18px;
+    text-align: center; border-radius: 6px; color: var(--ink-dim);
+    border: 1px solid var(--line); font-size: 13px;
+  }
+  #toggle-panel:hover { color: var(--ink); background: rgba(255,255,255,0.07); }
+  #panel.collapsed #panel-body { display: none; }
+
+  .field { margin-bottom: 11px; }
+  .field-label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 5px;
+  }
+  .field-label b { color: var(--ink); font-weight: 600; letter-spacing: 0.02em; text-transform: none; font-size: 11px; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 3px;
+    background: linear-gradient(90deg, rgba(240,169,92,0.85), rgba(240,169,92,0.2));
+    border-radius: 3px; outline: none; margin: 0;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 13px; height: 13px;
+    border-radius: 50%; background: #f6d9a8; border: 1px solid rgba(90,50,20,0.65);
+    cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.45);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%; background: #f6d9a8;
+    border: 1px solid rgba(90,50,20,0.65); cursor: pointer;
+  }
+  .cam-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .cam-grid button {
+    all: unset; cursor: pointer; text-align: center; font-size: 10.5px;
+    padding: 6px 4px; border-radius: 7px; border: 1px solid var(--line);
+    color: var(--ink-dim); transition: background 0.15s, color 0.15s;
+  }
+  .cam-grid button:hover { background: rgba(255,255,255,0.07); color: var(--ink); }
+  .cam-grid button.active {
+    background: rgba(240,169,92,0.2); color: #ffe3b8; border-color: rgba(240,169,92,0.55);
+  }
+  .cam-grid button.wide { grid-column: span 2; }
+
+  #readout {
+    position: fixed; bottom: max(12px, env(safe-area-inset-bottom));
+    left: max(14px, env(safe-area-inset-left));
+    font-size: 10.5px; letter-spacing: 0.08em; color: rgba(244,228,205,0.55);
+    z-index: 10; font-variant-numeric: tabular-nums; pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  #hint {
+    position: fixed; bottom: max(12px, env(safe-area-inset-bottom));
+    right: max(14px, env(safe-area-inset-right));
+    font-size: 10.5px; letter-spacing: 0.06em; color: rgba(244,228,205,0.4);
+    z-index: 10; pointer-events: none; text-align: right;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  #loader {
+    position: fixed; inset: 0; z-index: 30; display: grid; place-content: center;
+    justify-items: center; gap: 14px; background: #12100f;
+    transition: opacity 0.9s ease; text-align: center;
+  }
+  #loader.done { opacity: 0; pointer-events: none; }
+  #loader .title { font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); }
+  #loader .sub { font-size: 11px; letter-spacing: 0.1em; color: rgba(244,228,205,0.5); }
+  @media (max-width: 560px) {
+    #panel { width: 200px; padding: 10px; }
+    #hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="viewport"></div>
+
+<div id="panel">
+  <header>
+    <h1>Sahara Caravan</h1>
+    <button id="toggle-panel" title="Collapse (H)">–</button>
+  </header>
+  <div id="panel-body">
+    <div class="field">
+      <div class="field-label"><span>Time</span><b id="time-value">Golden hour</b></div>
+      <input id="time-slider" type="range" min="0" max="1000" step="1" value="580" />
+    </div>
+    <div class="field">
+      <div class="field-label"><span>Caravan</span><b id="length-value">24 camels</b></div>
+      <input id="length-slider" type="range" min="10" max="40" step="1" value="24" />
+    </div>
+    <div class="field">
+      <div class="field-label"><span>Wind</span><b id="wind-value">35%</b></div>
+      <input id="wind-slider" type="range" min="0" max="100" step="1" value="35" />
+    </div>
+    <div class="field" style="margin-bottom:0">
+      <div class="field-label"><span>Camera</span></div>
+      <div class="cam-grid" id="camera-buttons">
+        <button data-camera="overview" class="wide active">Dune overview</button>
+        <button data-camera="alongside">Alongside</button>
+        <button data-camera="pov">Lead rider</button>
+        <button data-camera="drone">Aerial</button>
+        <button data-camera="silhouette">Silhouette</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="readout">-- fps</div>
+<div id="hint">drag to orbit · scroll to zoom</div>
+
+<div id="loader">
+  <div class="title">Sahara</div>
+  <div class="sub">shaping the dunes…</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* ==========================================================================
+   1. Deterministic value noise — shared by terrain, crest solver and shading
+   ========================================================================== */
+
+function hashLattice(latticeX, latticeZ) {
+  let bits = (Math.imul(latticeX, 374761393) + Math.imul(latticeZ, 668265263)) | 0;
+  bits = Math.imul(bits ^ (bits >>> 13), 1274126177);
+  bits ^= bits >>> 16;
+  return (bits >>> 0) / 4294967296;
+}
+
+function valueNoise2D(sampleX, sampleZ) {
+  const cellX = Math.floor(sampleX);
+  const cellZ = Math.floor(sampleZ);
+  const fracX = sampleX - cellX;
+  const fracZ = sampleZ - cellZ;
+  const smoothX = fracX * fracX * (3 - 2 * fracX);
+  const smoothZ = fracZ * fracZ * (3 - 2 * fracZ);
+  const corner00 = hashLattice(cellX, cellZ);
+  const corner10 = hashLattice(cellX + 1, cellZ);
+  const corner01 = hashLattice(cellX, cellZ + 1);
+  const corner11 = hashLattice(cellX + 1, cellZ + 1);
+  const lerpLow = corner00 + (corner10 - corner00) * smoothX;
+  const lerpHigh = corner01 + (corner11 - corner01) * smoothX;
+  return lerpLow + (lerpHigh - lerpLow) * smoothZ;
+}
+
+function fractalNoise2D(sampleX, sampleZ, octaveCount) {
+  let sum = 0;
+  let amplitude = 0.5;
+  let normalizer = 0;
+  let freqX = sampleX;
+  let freqZ = sampleZ;
+  for (let octave = 0; octave < octaveCount; octave++) {
+    sum += valueNoise2D(freqX, freqZ) * amplitude;
+    normalizer += amplitude;
+    amplitude *= 0.5;
+    freqX *= 2.03;
+    freqZ *= 1.97;
+  }
+  return sum / normalizer;
+}
+
+/* ==========================================================================
+   2. Dune field
+   Dunes are transverse: crests run along the "along" axis (v), the wind
+   blows along the "across" axis (u). A sawtooth profile gives a long, gentle
+   windward slope and a short, steep slip face — the classic sharp crest.
+   ========================================================================== */
+
+const DUNE_ANGLE = 0.34;                      // rotation of the dune field in XZ
+const DUNE_COS = Math.cos(DUNE_ANGLE);
+const DUNE_SIN = Math.sin(DUNE_ANGLE);
+const DUNE_WAVELENGTH = 138;                  // crest-to-crest distance (m)
+const DUNE_CREST_FRACTION = 0.72;             // where in the cycle the crest sits
+const DUNE_AMPLITUDE = 27;
+
+// world -> dune space
+function duneAcrossOf(worldX, worldZ) { return worldX * DUNE_COS + worldZ * DUNE_SIN; }
+function duneAlongOf(worldX, worldZ) { return -worldX * DUNE_SIN + worldZ * DUNE_COS; }
+// dune space -> world
+function worldXOf(across, along) { return across * DUNE_COS - along * DUNE_SIN; }
+function worldZOf(across, along) { return across * DUNE_SIN + along * DUNE_COS; }
+
+// Low-frequency warp that makes the ridges meander instead of running dead straight.
+function duneWarp(across, along) {
+  return fractalNoise2D(across * 0.0034 + 11.7, along * 0.0031 + 4.2, 3) * 0.9
+       + fractalNoise2D(across * 0.0105 + 51.3, along * 0.0088 + 23.9, 2) * 0.24
+       - 0.57;
+}
+
+function dunePhaseAt(across, along) {
+  return across / DUNE_WAVELENGTH + duneWarp(across, along);
+}
+
+// Asymmetric dune profile in [0,1]: 1 exactly at the crest.
+function duneProfile(cyclePosition) {
+  if (cyclePosition < DUNE_CREST_FRACTION) {
+    const rise = cyclePosition / DUNE_CREST_FRACTION;
+    return rise * rise * (3 - 2 * rise) * 0.55 + rise * 0.45;
+  }
+  const fall = (cyclePosition - DUNE_CREST_FRACTION) / (1 - DUNE_CREST_FRACTION);
+  return 1 - Math.pow(fall, 0.72);
+}
+
+function terrainHeightAt(worldX, worldZ) {
+  const across = duneAcrossOf(worldX, worldZ);
+  const along = duneAlongOf(worldX, worldZ);
+
+  const phase = dunePhaseAt(across, along);
+  const cyclePosition = phase - Math.floor(phase);
+  const crestScale = 0.52 + 0.72 * fractalNoise2D(across * 0.0026 + 3.1, along * 0.0022 + 8.8, 3);
+  let height = duneProfile(cyclePosition) * DUNE_AMPLITUDE * crestScale;
+
+  // Secondary, smaller dune train running at an angle to the main one.
+  const secondaryAcross = across * 0.62 + along * 0.78;
+  const secondaryAlong = -across * 0.78 + along * 0.62;
+  const secondaryPhase = secondaryAcross / 46 + fractalNoise2D(secondaryAcross * 0.011, secondaryAlong * 0.009, 2) * 1.2;
+  const secondaryCycle = secondaryPhase - Math.floor(secondaryPhase);
+  height += duneProfile(secondaryCycle) * 4.6 * (0.4 + 0.6 * fractalNoise2D(secondaryAcross * 0.004, secondaryAlong * 0.004, 2));
+
+  // Broad basin-and-swell undulation, plus fine surface relief.
+  height += (fractalNoise2D(worldX * 0.0016 + 77.2, worldZ * 0.0016 + 19.4, 3) - 0.5) * 22;
+  height += (fractalNoise2D(worldX * 0.021 + 5.5, worldZ * 0.021 + 61.0, 2) - 0.5) * 0.55;
+
+  return height;
+}
+
+// Solve dunePhase(across, along) == crestIndex + CREST_FRACTION for `across`.
+// Fixed-point iteration converges quickly because the warp term is shallow.
+function solveCrestAcross(along, crestIndex) {
+  const target = crestIndex + DUNE_CREST_FRACTION;
+  let across = target * DUNE_WAVELENGTH;
+  for (let iteration = 0; iteration < 12; iteration++) {
+    across = (target - duneWarp(across, along)) * DUNE_WAVELENGTH;
+  }
+  return across;
+}
+
+/* The caravan walks the crest of dune index 0, nudged slightly onto the
+   windward side so the animals break the ridge line instead of sinking into it. */
+const CARAVAN_CREST_INDEX = 0;
+const CARAVAN_CREST_OFFSET = -1.6;
+
+const scratchPathPoint = new THREE.Vector3();
+function caravanPathPoint(alongDistance, target) {
+  const out = target || scratchPathPoint;
+  const across = solveCrestAcross(alongDistance, CARAVAN_CREST_INDEX) + CARAVAN_CREST_OFFSET;
+  const worldX = worldXOf(across, alongDistance);
+  const worldZ = worldZOf(across, alongDistance);
+  out.set(worldX, terrainHeightAt(worldX, worldZ), worldZ);
+  return out;
+}
+
+/* ==========================================================================
+   3. Renderer, scene, camera
+   ========================================================================== */
+
+const viewportElement = document.getElementById('viewport');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+let pixelRatioCap = Math.min(window.devicePixelRatio || 1, 2);
+renderer.setPixelRatio(pixelRatioCap);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+viewportElement.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const fogState = new THREE.FogExp2(0xd9c3a4, 0.0022);
+scene.fog = fogState;
+
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.35, 7000);
+camera.position.set(120, 70, -90);
+
+const orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.enableDamping = true;
+orbitControls.dampingFactor = 0.06;
+orbitControls.minDistance = 22;
+orbitControls.maxDistance = 460;
+orbitControls.maxPolarAngle = Math.PI * 0.495;
+orbitControls.enablePan = false;
+orbitControls.enabled = false; // switched on once the opening camera move settles
+
+/* ==========================================================================
+   4. Sky, sun and time of day
+   ========================================================================== */
+
+const SKY_KEYFRAMES = [
+  { key: 0.00, label: 'Afternoon',   sunElevation: 27.0, sunAzimuth: 258,
+    zenith: 0x3a7fd6, horizon: 0xbfd9ee, disk: 0xfff8e6, glow: 0xffeec4,
+    sunLight: 0xfff1d4, sunIntensity: 3.6, hemiSky: 0x9dc2ee, hemiGround: 0xd0a877,
+    hemiIntensity: 1.55, fog: 0xc9dcee, fogDensity: 0.00185, stars: 0.0,
+    exposure: 0.94, diskRadius: 0.028, diskBrightness: 5.0, glowSigma: 0.10, glowStrength: 0.30,
+    shadeTint: 0x93a1c6, heat: 1.0 },
+  { key: 0.36, label: 'Late afternoon', sunElevation: 13.5, sunAzimuth: 262,
+    zenith: 0x2f70c8, horizon: 0xefd2a2, disk: 0xffe9ae, glow: 0xffce86,
+    sunLight: 0xffdca6, sunIntensity: 3.1, hemiSky: 0x9ab8e2, hemiGround: 0xd8a771,
+    hemiIntensity: 1.30, fog: 0xdfc7a6, fogDensity: 0.00205, stars: 0.0,
+    exposure: 0.97, diskRadius: 0.034, diskBrightness: 5.2, glowSigma: 0.15, glowStrength: 0.46,
+    shadeTint: 0x8a96c0, heat: 0.55 },
+  { key: 0.62, label: 'Golden hour', sunElevation: 5.4, sunAzimuth: 266,
+    zenith: 0x22579f, horizon: 0xffb768, disk: 0xffb964, glow: 0xff9c4a,
+    sunLight: 0xffb570, sunIntensity: 2.8, hemiSky: 0x8b9fd2, hemiGround: 0xd9945a,
+    hemiIntensity: 1.05, fog: 0xedb684, fogDensity: 0.00235, stars: 0.02,
+    exposure: 1.02, diskRadius: 0.042, diskBrightness: 5.6, glowSigma: 0.19, glowStrength: 0.60,
+    shadeTint: 0x7d88ba, heat: 0.22 },
+  { key: 0.84, label: 'Sunset', sunElevation: 1.8, sunAzimuth: 270,
+    zenith: 0x17376f, horizon: 0xff6c34, disk: 0xff5c26, glow: 0xff6330,
+    sunLight: 0xff8b4c, sunIntensity: 1.8, hemiSky: 0x6b78b4, hemiGround: 0xb86a42,
+    hemiIntensity: 0.85, fog: 0xd88a5c, fogDensity: 0.00268, stars: 0.25,
+    exposure: 1.08, diskRadius: 0.050, diskBrightness: 6.2, glowSigma: 0.21, glowStrength: 0.62,
+    shadeTint: 0x7c81ae, heat: 0.06 },
+  { key: 1.00, label: 'Dusk', sunElevation: -7.0, sunAzimuth: 274,
+    zenith: 0x0a1130, horizon: 0x4c2a52, disk: 0x8e3320, glow: 0x76303a,
+    sunLight: 0x6a5a94, sunIntensity: 0.45, hemiSky: 0x3e4680, hemiGround: 0x5a4a58,
+    hemiIntensity: 0.85, fog: 0x342a4c, fogDensity: 0.00300, stars: 1.0,
+    exposure: 1.30, diskRadius: 0.052, diskBrightness: 2.4, glowSigma: 0.26, glowStrength: 0.40,
+    shadeTint: 0xc0c0cc, heat: 0.0 }
+];
+
+const skyState = {
+  label: 'Golden hour',
+  sunElevation: 0, sunAzimuth: 0, sunIntensity: 0, hemiIntensity: 0,
+  fogDensity: 0, stars: 0, exposure: 1, diskRadius: 0, glowSigma: 0,
+  glowStrength: 0, heat: 0,
+  zenith: new THREE.Color(), horizon: new THREE.Color(), disk: new THREE.Color(),
+  glow: new THREE.Color(), sunLight: new THREE.Color(), hemiSky: new THREE.Color(),
+  hemiGround: new THREE.Color(), fog: new THREE.Color(), shadeTint: new THREE.Color()
+};
+
+const COLOR_FIELDS = ['zenith', 'horizon', 'disk', 'glow', 'sunLight', 'hemiSky', 'hemiGround', 'fog', 'shadeTint'];
+const SCALAR_FIELDS = ['sunElevation', 'sunAzimuth', 'sunIntensity', 'hemiIntensity',
+  'fogDensity', 'stars', 'exposure', 'diskRadius', 'diskBrightness', 'glowSigma', 'glowStrength', 'heat'];
+
+const colorScratchA = new THREE.Color();
+const colorScratchB = new THREE.Color();
+
+function evaluateSky(normalizedTime) {
+  let upperIndex = 1;
+  while (upperIndex < SKY_KEYFRAMES.length - 1 && SKY_KEYFRAMES[upperIndex].key < normalizedTime) upperIndex++;
+  const lower = SKY_KEYFRAMES[upperIndex - 1];
+  const upper = SKY_KEYFRAMES[upperIndex];
+  const span = upper.key - lower.key;
+  const raw = span > 0 ? (normalizedTime - lower.key) / span : 0;
+  const blend = THREE.MathUtils.clamp(raw, 0, 1);
+  const eased = blend * blend * (3 - 2 * blend);
+
+  for (const field of SCALAR_FIELDS) {
+    skyState[field] = lower[field] + (upper[field] - lower[field]) * eased;
+  }
+  for (const field of COLOR_FIELDS) {
+    colorScratchA.setHex(lower[field], THREE.SRGBColorSpace);
+    colorScratchB.setHex(upper[field], THREE.SRGBColorSpace);
+    skyState[field].copy(colorScratchA).lerp(colorScratchB, eased);
+  }
+  skyState.label = eased < 0.5 ? lower.label : upper.label;
+}
+
+const sunDirection = new THREE.Vector3();
+const sunHorizontalDirection = new THREE.Vector3();
+
+function updateSunDirection() {
+  const elevation = THREE.MathUtils.degToRad(skyState.sunElevation);
+  const azimuth = THREE.MathUtils.degToRad(skyState.sunAzimuth);
+  sunDirection.set(
+    Math.sin(azimuth) * Math.cos(elevation),
+    Math.sin(elevation),
+    Math.cos(azimuth) * Math.cos(elevation)
+  ).normalize();
+  sunHorizontalDirection.set(sunDirection.x, 0, sunDirection.z).normalize();
+}
+
+const skyUniforms = {
+  uZenithColor: { value: new THREE.Color() },
+  uHorizonColor: { value: new THREE.Color() },
+  uHazeColor: { value: new THREE.Color() },
+  uSunDiskColor: { value: new THREE.Color() },
+  uSunGlowColor: { value: new THREE.Color() },
+  uSunDirection: { value: new THREE.Vector3(0, 0.2, -1) },
+  uDiskRadius: { value: 0.04 },
+  uDiskBrightness: { value: 4.0 },
+  uGlowSigma: { value: 0.2 },
+  uGlowStrength: { value: 0.8 },
+  uStarAmount: { value: 0 },
+  uTime: { value: 0 }
+};
+
+const skyMaterial = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  fog: false,
+  uniforms: skyUniforms,
+  vertexShader: /* glsl */`
+    varying vec3 vSkyDirection;
+    void main() {
+      vSkyDirection = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec3 vSkyDirection;
+    uniform vec3 uZenithColor, uHorizonColor, uHazeColor, uSunDiskColor, uSunGlowColor;
+    uniform vec3 uSunDirection;
+    uniform float uDiskRadius, uDiskBrightness, uGlowSigma, uGlowStrength, uStarAmount, uTime;
+
+    float hash31(vec3 seed) {
+      return fract(sin(dot(seed, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+    }
+
+    float starField(vec3 direction) {
+      vec3 scaled = direction * 78.0;
+      vec3 cell = floor(scaled);
+      vec3 local = fract(scaled) - 0.5;
+      float pick = hash31(cell);
+      if (pick < 0.955) return 0.0;
+      vec3 jitter = vec3(hash31(cell + 3.1), hash31(cell + 7.7), hash31(cell + 11.3)) - 0.5;
+      float distanceToStar = length(local - jitter * 0.5);
+      float magnitude = fract(pick * 91.7);
+      float brightness = smoothstep(0.10 + magnitude * 0.16, 0.0, distanceToStar);
+      float twinkle = 0.7 + 0.3 * sin(uTime * 2.1 + pick * 240.0);
+      return brightness * twinkle * (0.3 + 0.7 * magnitude);
+    }
+
+    void main() {
+      vec3 direction = normalize(vSkyDirection);
+      float upness = clamp(direction.y, -1.0, 1.0);
+
+      vec3 skyColor = mix(uHorizonColor, uZenithColor, pow(clamp(upness, 0.0, 1.0), 0.42));
+
+      // warm band hugging the horizon around the sun's azimuth
+      vec3 sunHorizontal = normalize(vec3(uSunDirection.x, 0.0, uSunDirection.z));
+      float azimuthAlignment = pow(max(dot(normalize(vec3(direction.x, 0.0, direction.z)), sunHorizontal), 0.0), 3.0);
+      float horizonBand = pow(1.0 - min(abs(upness) * 3.4, 1.0), 2.2);
+      skyColor = mix(skyColor, uSunGlowColor, horizonBand * azimuthAlignment * 0.42);
+
+      // stars fade in as the sky darkens
+      skyColor += vec3(0.94, 0.95, 1.0) * starField(direction) * uStarAmount * 1.25 * smoothstep(-0.01, 0.09, upness);
+
+      // sun glow and disk
+      float angleToSun = acos(clamp(dot(direction, uSunDirection), -1.0, 1.0));
+      float glow = exp(-(angleToSun * angleToSun) / (2.0 * uGlowSigma * uGlowSigma));
+      skyColor += uSunGlowColor * glow * uGlowStrength;
+      float diskMask = 1.0 - smoothstep(uDiskRadius * 0.94, uDiskRadius * 1.06, angleToSun);
+      float limbDarken = 1.0 - 0.22 * smoothstep(0.0, uDiskRadius, angleToSun);
+      skyColor = mix(skyColor, uSunDiskColor * (uDiskBrightness * limbDarken), diskMask);
+
+      // dust haze below the horizon line, matched to scene fog
+      skyColor = mix(uHazeColor, skyColor, smoothstep(-0.10, 0.035, upness));
+
+      // dither to kill banding across the wide gradients
+      float dither = (hash31(vec3(gl_FragCoord.xy, 1.0)) - 0.5) / 255.0;
+      gl_FragColor = vec4(skyColor + dither, 1.0);
+    }
+  `
+});
+
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(3200, 40, 26), skyMaterial);
+skyDome.frustumCulled = false;
+skyDome.renderOrder = -1000;
+scene.add(skyDome);
+
+const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.bias = -0.0006;
+sunLight.shadow.normalBias = 0.09;
+sunLight.shadow.camera.near = 1;
+sunLight.shadow.camera.far = 1400;
+scene.add(sunLight);
+scene.add(sunLight.target);
+
+const hemisphereLight = new THREE.HemisphereLight(0x88aadd, 0xc09060, 0.8);
+scene.add(hemisphereLight);
+
+/* ==========================================================================
+   5. Terrain mesh — a scrolling heightfield with a baked self-shadow map
+   ========================================================================== */
+
+const TERRAIN_SIZE = 1600;
+const TERRAIN_SEGMENTS = 320;
+const TERRAIN_VERTS_PER_SIDE = TERRAIN_SEGMENTS + 1;
+const TERRAIN_VERT_COUNT = TERRAIN_VERTS_PER_SIDE * TERRAIN_VERTS_PER_SIDE;
+const TERRAIN_CELL = TERRAIN_SIZE / TERRAIN_SEGMENTS;
+const TERRAIN_RECENTER_DISTANCE = 130;
+const HORIZON_DROP_START = 520;
+const HORIZON_DROP_RANGE = 300;
+
+const terrainGeometry = new THREE.BufferGeometry();
+const terrainPositionArray = new Float32Array(TERRAIN_VERT_COUNT * 3);
+const terrainNormalArray = new Float32Array(TERRAIN_VERT_COUNT * 3);
+const terrainUvArray = new Float32Array(TERRAIN_VERT_COUNT * 2);
+const terrainIndexArray = new Uint32Array(TERRAIN_SEGMENTS * TERRAIN_SEGMENTS * 6);
+
+const terrainHeightGrid = new Float32Array(TERRAIN_VERT_COUNT);
+const terrainHeightGridBack = new Float32Array(TERRAIN_VERT_COUNT);
+const terrainNormalBack = new Float32Array(TERRAIN_VERT_COUNT * 3);
+const terrainShadowBytes = new Uint8Array(TERRAIN_VERT_COUNT);
+const terrainShadowBack = new Uint8Array(TERRAIN_VERT_COUNT);
+const terrainShadowBlurTemp = new Uint8Array(TERRAIN_VERT_COUNT);
+
+(function initialiseTerrainTopology() {
+  let vertexCursor = 0;
+  let uvCursor = 0;
+  for (let row = 0; row < TERRAIN_VERTS_PER_SIDE; row++) {
+    for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
+      terrainPositionArray[vertexCursor] = -TERRAIN_SIZE / 2 + column * TERRAIN_CELL;
+      terrainPositionArray[vertexCursor + 1] = 0;
+      terrainPositionArray[vertexCursor + 2] = -TERRAIN_SIZE / 2 + row * TERRAIN_CELL;
+      terrainUvArray[uvCursor] = (column + 0.5) / TERRAIN_VERTS_PER_SIDE;
+      terrainUvArray[uvCursor + 1] = (row + 0.5) / TERRAIN_VERTS_PER_SIDE;
+      vertexCursor += 3;
+      uvCursor += 2;
+    }
+  }
+  let indexCursor = 0;
+  for (let row = 0; row < TERRAIN_SEGMENTS; row++) {
+    for (let column = 0; column < TERRAIN_SEGMENTS; column++) {
+      const topLeft = row * TERRAIN_VERTS_PER_SIDE + column;
+      const topRight = topLeft + 1;
+      const bottomLeft = topLeft + TERRAIN_VERTS_PER_SIDE;
+      const bottomRight = bottomLeft + 1;
+      terrainIndexArray[indexCursor++] = topLeft;
+      terrainIndexArray[indexCursor++] = bottomLeft;
+      terrainIndexArray[indexCursor++] = topRight;
+      terrainIndexArray[indexCursor++] = topRight;
+      terrainIndexArray[indexCursor++] = bottomLeft;
+      terrainIndexArray[indexCursor++] = bottomRight;
+    }
+  }
+  terrainGeometry.setAttribute('position', new THREE.BufferAttribute(terrainPositionArray, 3));
+  terrainGeometry.setAttribute('normal', new THREE.BufferAttribute(terrainNormalArray, 3));
+  terrainGeometry.setAttribute('uv', new THREE.BufferAttribute(terrainUvArray, 2));
+  terrainGeometry.setIndex(new THREE.BufferAttribute(terrainIndexArray, 1));
+  terrainGeometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), TERRAIN_SIZE);
+})();
+
+const terrainShadowTexture = new THREE.DataTexture(
+  terrainShadowBytes, TERRAIN_VERTS_PER_SIDE, TERRAIN_VERTS_PER_SIDE, THREE.RedFormat, THREE.UnsignedByteType
+);
+terrainShadowTexture.minFilter = THREE.LinearFilter;
+terrainShadowTexture.magFilter = THREE.LinearFilter;
+terrainShadowTexture.wrapS = THREE.ClampToEdgeWrapping;
+terrainShadowTexture.wrapT = THREE.ClampToEdgeWrapping;
+terrainShadowTexture.unpackAlignment = 1; // row width is not a multiple of four
+terrainShadowTexture.needsUpdate = true;
+
+const terrainUniforms = {
+  uSelfShadowMap: { value: terrainShadowTexture },
+  uShadeTint: { value: new THREE.Color(0.4, 0.45, 0.68) },
+  uWindAxis: { value: new THREE.Vector2(DUNE_COS, DUNE_SIN) },
+  uWindStrength: { value: 0.35 },
+  uHeatShimmer: { value: 0.2 },
+  uSceneTime: { value: 0 }
+};
+
+const terrainMaterial = new THREE.MeshStandardMaterial({
+  color: new THREE.Color().setHex(0xd9a86a, THREE.SRGBColorSpace),
+  roughness: 0.97,
+  metalness: 0.0,
+  dithering: true
+});
+
+terrainMaterial.onBeforeCompile = (shaderProgram) => {
+  Object.assign(shaderProgram.uniforms, terrainUniforms);
+
+  shaderProgram.vertexShader = shaderProgram.vertexShader
+    .replace('#include <common>', /* glsl */`
+      #include <common>
+      varying vec2 vTerrainUv;
+      varying vec2 vTerrainWorldXZ;
+      varying float vTerrainViewDistance;
+      varying float vTerrainFlatness;
+    `)
+    .replace('#include <begin_vertex>', /* glsl */`
+      #include <begin_vertex>
+      vec4 terrainWorldPosition = modelMatrix * vec4(transformed, 1.0);
+      vTerrainUv = uv;
+      vTerrainWorldXZ = terrainWorldPosition.xz;
+      vTerrainViewDistance = length(terrainWorldPosition.xyz - cameraPosition);
+      vTerrainFlatness = clamp(normal.y, 0.0, 1.0);
+    `);
+
+  shaderProgram.fragmentShader = shaderProgram.fragmentShader
+    .replace('#include <common>', /* glsl */`
+      #include <common>
+      varying vec2 vTerrainUv;
+      varying vec2 vTerrainWorldXZ;
+      varying float vTerrainViewDistance;
+      varying float vTerrainFlatness;
+      uniform sampler2D uSelfShadowMap;
+      uniform vec3 uShadeTint;
+      uniform vec2 uWindAxis;
+      uniform float uWindStrength;
+      uniform float uHeatShimmer;
+      uniform float uSceneTime;
+
+      float sandHash(vec2 cellCoord) {
+        return fract(sin(dot(cellCoord, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float sandNoise(vec2 point) {
+        vec2 cell = floor(point);
+        vec2 local = fract(point);
+        vec2 smoothed = local * local * (3.0 - 2.0 * local);
+        float c00 = sandHash(cell);
+        float c10 = sandHash(cell + vec2(1.0, 0.0));
+        float c01 = sandHash(cell + vec2(0.0, 1.0));
+        float c11 = sandHash(cell + vec2(1.0, 1.0));
+        return mix(mix(c00, c10, smoothed.x), mix(c01, c11, smoothed.x), smoothed.y);
+      }
+    `)
+    .replace('#include <map_fragment>', /* glsl */`
+      #include <map_fragment>
+
+      vec2 rippleAcrossAxis = normalize(uWindAxis);
+      vec2 rippleAlongAxis = vec2(-rippleAcrossAxis.y, rippleAcrossAxis.x);
+      float rippleAcross = dot(vTerrainWorldXZ, rippleAcrossAxis);
+      float rippleAlong = dot(vTerrainWorldXZ, rippleAlongAxis);
+
+      // heat shimmer wobbles the far ripple pattern
+      float shimmerDistance = smoothstep(90.0, 420.0, vTerrainViewDistance);
+      float shimmer = uHeatShimmer * shimmerDistance
+        * sin(uSceneTime * 2.4 + rippleAlong * 0.55 + rippleAcross * 0.31) * 0.85;
+
+      float rippleMeander = sin(rippleAlong * 0.33) * 0.42 + sin(rippleAlong * 0.105 + 1.4) * 1.15 + shimmer;
+      float ripplePhase = (rippleAcross + rippleMeander) * 6.1;
+      float ripplePhaseFine = (rippleAcross * 3.3 + rippleMeander * 0.4) * 6.1;
+
+      float rippleDistanceFade = 1.0 - smoothstep(55.0, 260.0, vTerrainViewDistance);
+      float rippleAliasFade = clamp(1.4 - fwidth(ripplePhase) * 0.9, 0.0, 1.0);
+      float rippleStrength = rippleDistanceFade * rippleAliasFade
+        * (0.42 + 0.58 * uWindStrength) * pow(vTerrainFlatness, 2.0);
+
+      float rippleValue = sin(ripplePhase) + sin(ripplePhaseFine) * 0.35;
+      float rippleSlope = (cos(ripplePhase) * 6.1 * 0.021 + cos(ripplePhaseFine) * 20.1 * 0.004) * rippleStrength;
+
+      float selfShadow = texture2D(uSelfShadowMap, vTerrainUv).r;
+      diffuseColor.rgb *= mix(uShadeTint, vec3(1.0), selfShadow);
+
+      // slip faces are coarser, darker, unrippled sand
+      float slipFace = 1.0 - vTerrainFlatness;
+      diffuseColor.rgb *= mix(vec3(1.0), vec3(0.83, 0.79, 0.79), slipFace * 0.75);
+
+      // broad tonal drift across the sand sheet
+      float macroTone = sandNoise(vTerrainWorldXZ * 0.0055) * 0.5 + sandNoise(vTerrainWorldXZ * 0.021) * 0.5;
+      diffuseColor.rgb *= 0.90 + 0.20 * macroTone;
+      diffuseColor.rgb *= 1.0 + rippleValue * 0.055 * rippleStrength;
+    `)
+    .replace('#include <normal_fragment_begin>', /* glsl */`
+      #include <normal_fragment_begin>
+      vec3 rippleWorldPerturb = vec3(rippleAcrossAxis.x, 0.0, rippleAcrossAxis.y) * (-rippleSlope);
+      normal = normalize(normal + (viewMatrix * vec4(rippleWorldPerturb, 0.0)).xyz);
+    `);
+};
+
+const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial);
+terrainMesh.receiveShadow = true;
+terrainMesh.castShadow = false;
+terrainMesh.frustumCulled = false;
+scene.add(terrainMesh);
+
+const terrainOrigin = new THREE.Vector2(0, 0);
+const terrainOriginPending = new THREE.Vector2(0, 0);
+
+function horizonDropoff(localX, localZ) {
+  const radius = Math.hypot(localX, localZ);
+  if (radius < HORIZON_DROP_START) return 0;
+  const beyond = Math.min((radius - HORIZON_DROP_START) / HORIZON_DROP_RANGE, 1.6);
+  return beyond * beyond * 105;
+}
+
+function buildHeightRows(targetGrid, originX, originZ, firstRow, lastRow) {
+  for (let row = firstRow; row < lastRow; row++) {
+    const localZ = -TERRAIN_SIZE / 2 + row * TERRAIN_CELL;
+    const worldZ = originZ + localZ;
+    const rowBase = row * TERRAIN_VERTS_PER_SIDE;
+    for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
+      const localX = -TERRAIN_SIZE / 2 + column * TERRAIN_CELL;
+      targetGrid[rowBase + column] =
+        terrainHeightAt(originX + localX, worldZ) - horizonDropoff(localX, localZ);
+    }
+  }
+}
+
+function buildNormalRows(sourceGrid, targetNormals, firstRow, lastRow) {
+  const doubleCell = TERRAIN_CELL * 2;
+  for (let row = firstRow; row < lastRow; row++) {
+    const rowBase = row * TERRAIN_VERTS_PER_SIDE;
+    const rowAbove = (row > 0 ? row - 1 : row) * TERRAIN_VERTS_PER_SIDE;
+    const rowBelow = (row < TERRAIN_VERTS_PER_SIDE - 1 ? row + 1 : row) * TERRAIN_VERTS_PER_SIDE;
+    for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
+      const columnLeft = column > 0 ? column - 1 : column;
+      const columnRight = column < TERRAIN_VERTS_PER_SIDE - 1 ? column + 1 : column;
+      const slopeX = sourceGrid[rowBase + columnLeft] - sourceGrid[rowBase + columnRight];
+      const slopeZ = sourceGrid[rowAbove + column] - sourceGrid[rowBelow + column];
+      const inverseLength = 1 / Math.hypot(slopeX, doubleCell, slopeZ);
+      const writeIndex = (rowBase + column) * 3;
+      targetNormals[writeIndex] = slopeX * inverseLength;
+      targetNormals[writeIndex + 1] = doubleCell * inverseLength;
+      targetNormals[writeIndex + 2] = slopeZ * inverseLength;
+    }
+  }
+}
+
+const SHADOW_MARCH_STEPS = 30;
+const SHADOW_STEP_GROWTH = 1.12;
+
+function bakeShadowRows(sourceGrid, targetBytes, firstRow, lastRow, marchX, marchZ, tangentElevation) {
+  if (tangentElevation <= 0.004) {
+    targetBytes.fill(255, firstRow * TERRAIN_VERTS_PER_SIDE, lastRow * TERRAIN_VERTS_PER_SIDE);
+    return;
+  }
+  const stepX = marchX / TERRAIN_CELL;
+  const stepZ = marchZ / TERRAIN_CELL;
+  for (let row = firstRow; row < lastRow; row++) {
+    const rowBase = row * TERRAIN_VERTS_PER_SIDE;
+    for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
+      const baseHeight = sourceGrid[rowBase + column];
+      let strongestBlocker = 0;
+      let marchDistance = 0;
+      let stepLength = TERRAIN_CELL;
+      for (let step = 0; step < SHADOW_MARCH_STEPS; step++) {
+        marchDistance += stepLength;
+        stepLength *= SHADOW_STEP_GROWTH;
+        const sampleColumn = (column + stepX * marchDistance) | 0;
+        if (sampleColumn < 0 || sampleColumn >= TERRAIN_VERTS_PER_SIDE) break;
+        const sampleRow = (row + stepZ * marchDistance) | 0;
+        if (sampleRow < 0 || sampleRow >= TERRAIN_VERTS_PER_SIDE) break;
+        const excess = sourceGrid[sampleRow * TERRAIN_VERTS_PER_SIDE + sampleColumn]
+          - (baseHeight + marchDistance * tangentElevation);
+        if (excess > strongestBlocker) strongestBlocker = excess;
+      }
+      const litFraction = 1 - Math.min(strongestBlocker / 3.4, 1);
+      targetBytes[rowBase + column] = (litFraction * 255) | 0;
+    }
+  }
+}
+
+// Separable blur — the ray march is quantised to grid cells, so raw shadow
+// boundaries come out stair-stepped. Two cheap passes smooth them out.
+const SHADOW_BLUR_RADIUS = 2;
+
+function blurShadowRowsHorizontal(sourceBytes, targetBytes, firstRow, lastRow) {
+  for (let row = firstRow; row < lastRow; row++) {
+    const rowBase = row * TERRAIN_VERTS_PER_SIDE;
+    for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
+      let total = 0;
+      let taps = 0;
+      for (let offset = -SHADOW_BLUR_RADIUS; offset <= SHADOW_BLUR_RADIUS; offset++) {
+        const sampleColumn = column + offset;
+        if (sampleColumn < 0 || sampleColumn >= TERRAIN_VERTS_PER_SIDE) continue;
+        total += sourceBytes[rowBase + sampleColumn];
+        taps++;
+      }
+      targetBytes[rowBase + column] = (total / taps) | 0;
+    }
+  }
+}
+
+function blurShadowRowsVertical(sourceBytes, targetBytes, firstRow, lastRow) {
+  for (let row = firstRow; row < lastRow; row++) {
+    const rowBase = row * TERRAIN_VERTS_PER_SIDE;
+    for (let column = 0; column < TERRAIN_VERTS_PER_SIDE; column++) {
+      let total = 0;
+      let taps = 0;
+      for (let offset = -SHADOW_BLUR_RADIUS; offset <= SHADOW_BLUR_RADIUS; offset++) {
+        const sampleRow = row + offset;
+        if (sampleRow < 0 || sampleRow >= TERRAIN_VERTS_PER_SIDE) continue;
+        total += sourceBytes[sampleRow * TERRAIN_VERTS_PER_SIDE + column];
+        taps++;
+      }
+      targetBytes[rowBase + column] = (total / taps) | 0;
+    }
+  }
+}
+
+/* Amortised rebuild pipeline: heights -> normals -> shadow bake -> commit. */
+const terrainJob = {
+  active: false,
+  stage: 'idle',
+  row: 0,
+  recentring: false,
+  marchX: 0,
+  marchZ: 0,
+  tangentElevation: 0,
+  bakedElevation: 999
+};
+
+function startTerrainJob(recentring, nextOriginX, nextOriginZ) {
+  terrainJob.active = true;
+  terrainJob.recentring = recentring;
+  terrainJob.stage = recentring ? 'heights' : 'shadow';
+  terrainJob.row = 0;
+  terrainOriginPending.set(nextOriginX, nextOriginZ);
+  const horizontalLength = Math.hypot(sunDirection.x, sunDirection.z);
+  terrainJob.marchX = horizontalLength > 1e-5 ? sunDirection.x / horizontalLength : 1;
+  terrainJob.marchZ = horizontalLength > 1e-5 ? sunDirection.z / horizontalLength : 0;
+  terrainJob.tangentElevation = horizontalLength > 1e-5 ? sunDirection.y / horizontalLength : 10;
+  terrainJob.bakedElevation = skyState.sunElevation;
+}
+
+function advanceTerrainJob(millisecondBudget) {
+  if (!terrainJob.active) return;
+  const deadline = performance.now() + millisecondBudget;
+  while (performance.now() < deadline) {
+    if (terrainJob.stage === 'heights') {
+      const lastRow = Math.min(terrainJob.row + 12, TERRAIN_VERTS_PER_SIDE);
+      buildHeightRows(terrainHeightGridBack, terrainOriginPending.x, terrainOriginPending.y, terrainJob.row, lastRow);
+      terrainJob.row = lastRow;
+      if (terrainJob.row >= TERRAIN_VERTS_PER_SIDE) { terrainJob.stage = 'normals'; terrainJob.row = 0; }
+    } else if (terrainJob.stage === 'normals') {
+      const lastRow = Math.min(terrainJob.row + 40, TERRAIN_VERTS_PER_SIDE);
+      buildNormalRows(terrainHeightGridBack, terrainNormalBack, terrainJob.row, lastRow);
+      terrainJob.row = lastRow;
+      if (terrainJob.row >= TERRAIN_VERTS_PER_SIDE) { terrainJob.stage = 'shadow'; terrainJob.row = 0; }
+    } else if (terrainJob.stage === 'shadow') {
+      const sourceGrid = terrainJob.recentring ? terrainHeightGridBack : terrainHeightGrid;
+      const lastRow = Math.min(terrainJob.row + 16, TERRAIN_VERTS_PER_SIDE);
+      bakeShadowRows(sourceGrid, terrainShadowBack, terrainJob.row, lastRow,
+        terrainJob.marchX, terrainJob.marchZ, terrainJob.tangentElevation);
+      terrainJob.row = lastRow;
+      if (terrainJob.row >= TERRAIN_VERTS_PER_SIDE) { terrainJob.stage = 'blurX'; terrainJob.row = 0; }
+    } else if (terrainJob.stage === 'blurX') {
+      const lastRow = Math.min(terrainJob.row + 60, TERRAIN_VERTS_PER_SIDE);
+      blurShadowRowsHorizontal(terrainShadowBack, terrainShadowBlurTemp, terrainJob.row, lastRow);
+      terrainJob.row = lastRow;
+      if (terrainJob.row >= TERRAIN_VERTS_PER_SIDE) { terrainJob.stage = 'blurY'; terrainJob.row = 0; }
+    } else if (terrainJob.stage === 'blurY') {
+      const lastRow = Math.min(terrainJob.row + 60, TERRAIN_VERTS_PER_SIDE);
+      blurShadowRowsVertical(terrainShadowBlurTemp, terrainShadowBack, terrainJob.row, lastRow);
+      terrainJob.row = lastRow;
+      if (terrainJob.row >= TERRAIN_VERTS_PER_SIDE) { terrainJob.stage = 'commit'; }
+    } else {
+      commitTerrainJob();
+      return;
+    }
+  }
+}
+
+function commitTerrainJob() {
+  if (terrainJob.recentring) {
+    terrainHeightGrid.set(terrainHeightGridBack);
+    terrainNormalArray.set(terrainNormalBack);
+    for (let vertexIndex = 0; vertexIndex < TERRAIN_VERT_COUNT; vertexIndex++) {
+      terrainPositionArray[vertexIndex * 3 + 1] = terrainHeightGrid[vertexIndex];
+    }
+    terrainGeometry.attributes.position.needsUpdate = true;
+    terrainGeometry.attributes.normal.needsUpdate = true;
+    terrainOrigin.copy(terrainOriginPending);
+    terrainMesh.position.set(terrainOrigin.x, 0, terrainOrigin.y);
+  }
+  terrainShadowBytes.set(terrainShadowBack);
+  terrainShadowTexture.needsUpdate = true;
+  terrainJob.active = false;
+  terrainJob.stage = 'idle';
+}
+
+function buildTerrainImmediately(originX, originZ) {
+  terrainOriginPending.set(originX, originZ);
+  buildHeightRows(terrainHeightGridBack, originX, originZ, 0, TERRAIN_VERTS_PER_SIDE);
+  buildNormalRows(terrainHeightGridBack, terrainNormalBack, 0, TERRAIN_VERTS_PER_SIDE);
+  const horizontalLength = Math.hypot(sunDirection.x, sunDirection.z);
+  bakeShadowRows(terrainHeightGridBack, terrainShadowBack, 0, TERRAIN_VERTS_PER_SIDE,
+    sunDirection.x / horizontalLength, sunDirection.z / horizontalLength,
+    sunDirection.y / horizontalLength);
+  blurShadowRowsHorizontal(terrainShadowBack, terrainShadowBlurTemp, 0, TERRAIN_VERTS_PER_SIDE);
+  blurShadowRowsVertical(terrainShadowBlurTemp, terrainShadowBack, 0, TERRAIN_VERTS_PER_SIDE);
+  terrainJob.recentring = true;
+  terrainJob.bakedElevation = skyState.sunElevation;
+  commitTerrainJob();
+}
+
+/* ==========================================================================
+   6. Camel + rider rig, built once and evaluated per instance
+   ========================================================================== */
+
+const MAX_CAMELS = 40;
+const CAMEL_SPACING = 8.6;
+const STRIDE_LENGTH = 3.05;
+const CARAVAN_SPEED = 1.62;
+
+function makeLimbGeometry(topRadius, bottomRadius, limbLength, radialSegments) {
+  return new THREE.CylinderGeometry(topRadius, bottomRadius, limbLength, radialSegments, 1)
+    .translate(0, -limbLength / 2, 0);
+}
+function makeRisingLimbGeometry(bottomRadius, topRadius, limbLength, radialSegments) {
+  return new THREE.CylinderGeometry(topRadius, bottomRadius, limbLength, radialSegments, 1)
+    .translate(0, limbLength / 2, 0);
+}
+
+const camelHideBase = new THREE.Color().setHex(0xc7a075, THREE.SRGBColorSpace);
+const CAMEL_HIDE_VARIANTS = [0xc7a075, 0xb68c5c, 0xd8b98d, 0xa87d55, 0xcfa87c];
+const ROBE_VARIANTS = [0x3a55ad, 0x2d4291, 0x4459a8, 0x27397f, 0x4a4494];
+
+function makeStandardPart(geometry, hexColor, instanceCount, options = {}) {
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHex(hexColor, THREE.SRGBColorSpace),
+    roughness: options.roughness !== undefined ? options.roughness : 0.88,
+    metalness: 0.0
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, instanceCount);
+  mesh.castShadow = true;
+  mesh.receiveShadow = options.receiveShadow === true;
+  mesh.frustumCulled = false;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(mesh);
+  return mesh;
+}
+
+// --- geometries -----------------------------------------------------------
+const camelBodyGeometry = new THREE.CapsuleGeometry(0.44, 1.02, 7, 18)
+  .rotateX(Math.PI / 2).scale(0.88, 0.95, 1.0);
+
+const camelHumpGeometry = new THREE.SphereGeometry(0.42, 16, 12).scale(0.64, 0.88, 0.82);
+
+const camelNeckLowerGeometry = makeRisingLimbGeometry(0.27, 0.20, 0.72, 12);
+const camelNeckUpperGeometry = makeRisingLimbGeometry(0.20, 0.145, 0.62, 12);
+
+const camelHeadGeometry = mergeGeometries([
+  new THREE.SphereGeometry(0.155, 14, 11).scale(0.86, 1.0, 1.1),
+  new THREE.CylinderGeometry(0.072, 0.105, 0.33, 12).rotateX(Math.PI / 2).translate(0, -0.05, 0.21),
+  new THREE.ConeGeometry(0.036, 0.11, 7).rotateX(-0.25).translate(-0.085, 0.15, -0.04),
+  new THREE.ConeGeometry(0.036, 0.11, 7).rotateX(-0.25).translate(0.085, 0.15, -0.04)
+], false);
+
+const camelLegUpperGeometry = makeLimbGeometry(0.115, 0.082, 0.85, 7);
+const camelLegLowerGeometry = makeLimbGeometry(0.072, 0.052, 0.80, 6);
+const camelFootGeometry = new THREE.SphereGeometry(0.115, 8, 6).scale(1.0, 0.42, 1.3).translate(0, -0.04, 0.03);
+const camelTailGeometry = makeLimbGeometry(0.042, 0.018, 0.55, 5);
+
+const saddleGeometry = mergeGeometries([
+  new THREE.BoxGeometry(0.74, 0.12, 0.92).translate(0, 0, 0),
+  new THREE.CylinderGeometry(0.045, 0.055, 0.30, 7).translate(0, 0.18, 0.34),
+  new THREE.SphereGeometry(0.055, 7, 6).translate(0, 0.33, 0.34)
+], false);
+
+const cargoGeometry = mergeGeometries([
+  new THREE.BoxGeometry(0.40, 0.46, 0.74),
+  new THREE.BoxGeometry(0.43, 0.06, 0.20).translate(0, 0.06, 0)
+], false);
+
+const riderRobeGeometry = mergeGeometries([
+  new THREE.CylinderGeometry(0.205, 0.40, 0.62, 13).translate(0, 0.31, 0),
+  new THREE.SphereGeometry(0.21, 13, 9).scale(1.34, 0.74, 0.94).translate(0, 0.61, 0),
+  new THREE.CylinderGeometry(0.056, 0.068, 0.38, 7).rotateX(0.6).translate(0.19, 0.45, 0.11),
+  new THREE.CylinderGeometry(0.056, 0.068, 0.38, 7).rotateX(0.6).translate(-0.19, 0.45, 0.11)
+], false);
+
+const riderHeadGeometry = new THREE.SphereGeometry(0.104, 12, 9);
+
+const riderVeilGeometry = mergeGeometries([
+  new THREE.SphereGeometry(0.138, 13, 10).scale(1.0, 1.06, 1.0),
+  new THREE.BoxGeometry(0.21, 0.10, 0.22).translate(0, -0.02, 0.05),
+  new THREE.BoxGeometry(0.19, 0.40, 0.06).rotateX(-0.14).translate(0, -0.23, -0.11)
+], false);
+
+const footprintGeometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+
+// --- instanced meshes -----------------------------------------------------
+const camelBodyMesh = makeStandardPart(camelBodyGeometry, 0xc7a075, MAX_CAMELS, { roughness: 0.92 });
+const camelHumpMesh = makeStandardPart(camelHumpGeometry, 0xbb9264, MAX_CAMELS, { roughness: 0.95 });
+const camelNeckLowerMesh = makeStandardPart(camelNeckLowerGeometry, 0xc7a075, MAX_CAMELS, { roughness: 0.92 });
+const camelNeckUpperMesh = makeStandardPart(camelNeckUpperGeometry, 0xc7a075, MAX_CAMELS, { roughness: 0.92 });
+const camelHeadMesh = makeStandardPart(camelHeadGeometry, 0xc9a478, MAX_CAMELS, { roughness: 0.9 });
+const camelTailMesh = makeStandardPart(camelTailGeometry, 0xa9825a, MAX_CAMELS);
+const camelLegUpperMesh = makeStandardPart(camelLegUpperGeometry, 0xbe9668, MAX_CAMELS * 4, { roughness: 0.92 });
+const camelLegLowerMesh = makeStandardPart(camelLegLowerGeometry, 0xb08a5f, MAX_CAMELS * 4, { roughness: 0.92 });
+const camelFootMesh = makeStandardPart(camelFootGeometry, 0x8f6f4c, MAX_CAMELS * 4);
+const saddleMesh = makeStandardPart(saddleGeometry, 0x8a3f36, MAX_CAMELS, { roughness: 0.85 });
+const cargoMesh = makeStandardPart(cargoGeometry, 0xa38659, MAX_CAMELS * 2, { roughness: 0.95 });
+const riderRobeMesh = makeStandardPart(riderRobeGeometry, 0x3a55ad, MAX_CAMELS, { roughness: 0.8 });
+const riderHeadMesh = makeStandardPart(riderHeadGeometry, 0x7d5c40, MAX_CAMELS);
+const riderVeilMesh = makeStandardPart(riderVeilGeometry, 0x35509f, MAX_CAMELS, { roughness: 0.78 });
+
+// --- the rig --------------------------------------------------------------
+function createCamelRig() {
+  const rigRoot = new THREE.Object3D();
+  rigRoot.matrixAutoUpdate = false;
+
+  const swayNode = new THREE.Object3D();
+  rigRoot.add(swayNode);
+
+  const bodyNode = new THREE.Object3D();
+  bodyNode.position.set(0, 1.82, 0);
+  swayNode.add(bodyNode);
+
+  const humpNode = new THREE.Object3D();
+  humpNode.position.set(0, 0.40, -0.16);
+  bodyNode.add(humpNode);
+
+  const saddleNode = new THREE.Object3D();
+  saddleNode.position.set(0, 0.44, 0.26);
+  bodyNode.add(saddleNode);
+
+  const cargoNodes = [new THREE.Object3D(), new THREE.Object3D()];
+  cargoNodes[0].position.set(-0.56, 0.08, -0.34);
+  cargoNodes[0].rotation.z = 0.16;
+  cargoNodes[1].position.set(0.56, 0.08, -0.34);
+  cargoNodes[1].rotation.z = -0.16;
+  bodyNode.add(cargoNodes[0], cargoNodes[1]);
+
+  const riderNode = new THREE.Object3D();
+  riderNode.position.set(0, 0.06, 0.02);
+  saddleNode.add(riderNode);
+
+  const riderHeadNode = new THREE.Object3D();
+  riderHeadNode.position.set(0, 0.68, 0.01);
+  riderNode.add(riderHeadNode);
+
+  const neckLowerNode = new THREE.Object3D();
+  neckLowerNode.position.set(0, 0.16, 0.84);
+  bodyNode.add(neckLowerNode);
+
+  const neckUpperNode = new THREE.Object3D();
+  neckUpperNode.position.set(0, 0.72, 0);
+  neckLowerNode.add(neckUpperNode);
+
+  const headNode = new THREE.Object3D();
+  headNode.position.set(0, 0.62, 0);
+  neckUpperNode.add(headNode);
+
+  const tailNode = new THREE.Object3D();
+  tailNode.position.set(0, 0.18, -0.95);
+  bodyNode.add(tailNode);
+
+  const hipNodes = [];
+  const legUpperNodes = [];
+  const legLowerNodes = [];
+  const footNodes = [];
+  const HIP_LAYOUT = [
+    [-0.30, 0.62], [0.30, 0.62],   // front-left, front-right
+    [-0.32, -0.68], [0.32, -0.68]  // hind-left, hind-right
+  ];
+  for (let legIndex = 0; legIndex < 4; legIndex++) {
+    const hipNode = new THREE.Object3D();
+    hipNode.position.set(HIP_LAYOUT[legIndex][0], -0.08, HIP_LAYOUT[legIndex][1]);
+    bodyNode.add(hipNode);
+
+    const upperNode = new THREE.Object3D();
+    hipNode.add(upperNode);
+
+    const lowerNode = new THREE.Object3D();
+    lowerNode.position.set(0, -0.85, 0);
+    upperNode.add(lowerNode);
+
+    const footNode = new THREE.Object3D();
+    footNode.position.set(0, -0.80, 0);
+    lowerNode.add(footNode);
+
+    hipNodes.push(hipNode);
+    legUpperNodes.push(upperNode);
+    legLowerNodes.push(lowerNode);
+    footNodes.push(footNode);
+  }
+
+  return {
+    rigRoot, swayNode, bodyNode, humpNode, saddleNode, cargoNodes,
+    riderNode, riderHeadNode, neckLowerNode, neckUpperNode, headNode,
+    tailNode, legUpperNodes, legLowerNodes, footNodes
+  };
+}
+
+const camelRig = createCamelRig();
+
+/* Per-camel constants: hide colour, robe colour, whether it carries a rider. */
+const camelSeeds = new Float32Array(MAX_CAMELS);
+const camelHasRider = new Uint8Array(MAX_CAMELS);
+const camelScales = new Float32Array(MAX_CAMELS);
+
+(function initialiseCamelIdentities() {
+  const hideColor = new THREE.Color();
+  const robeColor = new THREE.Color();
+  for (let camelIndex = 0; camelIndex < MAX_CAMELS; camelIndex++) {
+    camelSeeds[camelIndex] = hashLattice(camelIndex * 17 + 3, camelIndex * 5 + 91);
+    camelHasRider[camelIndex] = (camelIndex === 0 || camelIndex % 4 === 2) ? 1 : 0;
+    camelScales[camelIndex] = 0.92 + camelSeeds[camelIndex] * 0.18;
+
+    const hideHex = CAMEL_HIDE_VARIANTS[camelIndex % CAMEL_HIDE_VARIANTS.length];
+    hideColor.setHex(hideHex, THREE.SRGBColorSpace);
+    const tonalShift = 0.92 + camelSeeds[camelIndex] * 0.16;
+    hideColor.multiplyScalar(tonalShift);
+    camelBodyMesh.setColorAt(camelIndex, hideColor);
+    camelHumpMesh.setColorAt(camelIndex, hideColor);
+    camelNeckLowerMesh.setColorAt(camelIndex, hideColor);
+    camelNeckUpperMesh.setColorAt(camelIndex, hideColor);
+    camelHeadMesh.setColorAt(camelIndex, hideColor);
+    camelTailMesh.setColorAt(camelIndex, hideColor);
+    for (let legIndex = 0; legIndex < 4; legIndex++) {
+      camelLegUpperMesh.setColorAt(camelIndex * 4 + legIndex, hideColor);
+      camelLegLowerMesh.setColorAt(camelIndex * 4 + legIndex, hideColor);
+    }
+
+    robeColor.setHex(ROBE_VARIANTS[camelIndex % ROBE_VARIANTS.length], THREE.SRGBColorSpace);
+    robeColor.multiplyScalar(0.9 + camelSeeds[camelIndex] * 0.35);
+    riderRobeMesh.setColorAt(camelIndex, robeColor);
+    riderVeilMesh.setColorAt(camelIndex, robeColor.clone().multiplyScalar(0.92));
+  }
+  for (const coloredMesh of [camelBodyMesh, camelHumpMesh, camelNeckLowerMesh, camelNeckUpperMesh,
+    camelHeadMesh, camelTailMesh, camelLegUpperMesh, camelLegLowerMesh, riderRobeMesh, riderVeilMesh]) {
+    if (coloredMesh.instanceColor) coloredMesh.instanceColor.needsUpdate = true;
+  }
+})();
+
+// Instances that are not in use collapse to a zero-scale point far below the sand.
+const ZERO_MATRIX = new THREE.Matrix4().compose(
+  new THREE.Vector3(0, -10000, 0), new THREE.Quaternion(), new THREE.Vector3(0, 0, 0)
+);
+
+/* ==========================================================================
+   7. Footprints — a recycled ring of fading decals
+   ========================================================================== */
+
+const FOOTPRINT_COUNT = 640;
+const footprintBirthTimes = new Float32Array(FOOTPRINT_COUNT).fill(-1000);
+const footprintBirthAttribute = new THREE.InstancedBufferAttribute(footprintBirthTimes, 1);
+footprintBirthAttribute.setUsage(THREE.DynamicDrawUsage);
+footprintGeometry.setAttribute('aBirthTime', footprintBirthAttribute);
+
+const footprintUniforms = {
+  uSceneTime: { value: 0 },
+  uFootprintLife: { value: 200 },
+  uFootprintColor: { value: new THREE.Color(0.30, 0.22, 0.17) }
+};
+
+const footprintMaterial = new THREE.ShaderMaterial({
+  uniforms: footprintUniforms,
+  transparent: true,
+  depthWrite: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -3,
+  polygonOffsetUnits: -3,
+  vertexShader: /* glsl */`
+    attribute float aBirthTime;
+    uniform float uSceneTime;
+    uniform float uFootprintLife;
+    varying vec2 vFootprintUv;
+    varying float vFootprintFade;
+    void main() {
+      vFootprintUv = uv;
+      float age = uSceneTime - aBirthTime;
+      float life = clamp(1.0 - age / uFootprintLife, 0.0, 1.0);
+      vFootprintFade = life * life * (3.0 - 2.0 * life);
+      vec4 worldPosition = instanceMatrix * vec4(position, 1.0);
+      vec4 viewPosition = modelViewMatrix * worldPosition;
+      vFootprintFade *= 1.0 - smoothstep(120.0, 260.0, -viewPosition.z);
+      gl_Position = projectionMatrix * viewPosition;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision mediump float;
+    uniform vec3 uFootprintColor;
+    varying vec2 vFootprintUv;
+    varying float vFootprintFade;
+    void main() {
+      vec2 centered = (vFootprintUv - 0.5) * 2.0;
+      centered.x *= 1.35;
+      float radial = length(centered);
+      float core = smoothstep(1.0, 0.25, radial);
+      float alpha = core * vFootprintFade * 0.55;
+      if (alpha < 0.004) discard;
+      gl_FragColor = vec4(uFootprintColor, alpha);
+    }
+  `
+});
+
+const footprintMesh = new THREE.InstancedMesh(footprintGeometry, footprintMaterial, FOOTPRINT_COUNT);
+footprintMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+footprintMesh.frustumCulled = false;
+footprintMesh.castShadow = false;
+footprintMesh.receiveShadow = false;
+footprintMesh.renderOrder = 2;
+scene.add(footprintMesh);
+
+for (let printIndex = 0; printIndex < FOOTPRINT_COUNT; printIndex++) {
+  footprintMesh.setMatrixAt(printIndex, ZERO_MATRIX);
+}
+footprintMesh.instanceMatrix.needsUpdate = true;
+
+let footprintCursor = 0;
+let lastFootprintAlong = 0;
+
+const footprintPosition = new THREE.Vector3();
+const footprintQuaternion = new THREE.Quaternion();
+const footprintScale = new THREE.Vector3();
+const footprintMatrix = new THREE.Matrix4();
+const footprintNormal = new THREE.Vector3();
+const footprintUpAxis = new THREE.Vector3(0, 1, 0);
+
+function terrainNormalAt(worldX, worldZ, target) {
+  const probe = 1.4;
+  const heightLeft = terrainHeightAt(worldX - probe, worldZ);
+  const heightRight = terrainHeightAt(worldX + probe, worldZ);
+  const heightBack = terrainHeightAt(worldX, worldZ - probe);
+  const heightForward = terrainHeightAt(worldX, worldZ + probe);
+  return target.set(heightLeft - heightRight, probe * 2, heightBack - heightForward).normalize();
+}
+
+function spawnFootprint(alongDistance, lateralOffset, sceneTime) {
+  const across = solveCrestAcross(alongDistance, CARAVAN_CREST_INDEX) + CARAVAN_CREST_OFFSET + lateralOffset;
+  const worldX = worldXOf(across, alongDistance);
+  const worldZ = worldZOf(across, alongDistance);
+  footprintPosition.set(worldX, terrainHeightAt(worldX, worldZ) + 0.035, worldZ);
+  terrainNormalAt(worldX, worldZ, footprintNormal);
+  footprintQuaternion.setFromUnitVectors(footprintUpAxis, footprintNormal);
+  footprintScale.set(0.62, 1, 0.82);
+  footprintMatrix.compose(footprintPosition, footprintQuaternion, footprintScale);
+  footprintMesh.setMatrixAt(footprintCursor, footprintMatrix);
+  footprintBirthTimes[footprintCursor] = sceneTime;
+  footprintCursor = (footprintCursor + 1) % FOOTPRINT_COUNT;
+}
+
+/* ==========================================================================
+   8. Wind-blown sand — points shaped into streaks along the wind axis
+   ========================================================================== */
+
+const SAND_PARTICLE_COUNT = 1300;
+const sandPositions = new Float32Array(SAND_PARTICLE_COUNT * 3);
+const sandAlphas = new Float32Array(SAND_PARTICLE_COUNT);
+const sandSizes = new Float32Array(SAND_PARTICLE_COUNT);
+const sandVelocities = new Float32Array(SAND_PARTICLE_COUNT * 3);
+const sandLifetimes = new Float32Array(SAND_PARTICLE_COUNT);
+const sandAges = new Float32Array(SAND_PARTICLE_COUNT);
+
+const sandGeometry = new THREE.BufferGeometry();
+sandGeometry.setAttribute('position', new THREE.BufferAttribute(sandPositions, 3).setUsage(THREE.DynamicDrawUsage));
+sandGeometry.setAttribute('aAlpha', new THREE.BufferAttribute(sandAlphas, 1).setUsage(THREE.DynamicDrawUsage));
+sandGeometry.setAttribute('aSize', new THREE.BufferAttribute(sandSizes, 1).setUsage(THREE.DynamicDrawUsage));
+sandGeometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+
+const sandUniforms = {
+  uPixelScale: { value: 400 },
+  uSandColor: { value: new THREE.Color(0.98, 0.86, 0.68) },
+  uStreakAxis: { value: new THREE.Vector2(1, 0) }
+};
+
+const sandMaterial = new THREE.ShaderMaterial({
+  uniforms: sandUniforms,
+  transparent: true,
+  depthWrite: false,
+  vertexShader: /* glsl */`
+    attribute float aAlpha;
+    attribute float aSize;
+    uniform float uPixelScale;
+    varying float vSandAlpha;
+    void main() {
+      vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+      float viewDistance = max(-viewPosition.z, 1.0);
+      gl_PointSize = clamp(aSize * uPixelScale / viewDistance, 1.0, 22.0);
+      vSandAlpha = aAlpha * (1.0 - smoothstep(260.0, 620.0, viewDistance));
+      gl_Position = projectionMatrix * viewPosition;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision mediump float;
+    uniform vec3 uSandColor;
+    uniform vec2 uStreakAxis;
+    varying float vSandAlpha;
+    void main() {
+      vec2 local = gl_PointCoord * 2.0 - 1.0;
+      vec2 aligned = vec2(dot(local, uStreakAxis), dot(local, vec2(-uStreakAxis.y, uStreakAxis.x)));
+      aligned.y *= 2.9;
+      float radial = length(aligned);
+      float alpha = smoothstep(1.0, 0.1, radial) * vSandAlpha;
+      if (alpha < 0.004) discard;
+      gl_FragColor = vec4(uSandColor, alpha);
+    }
+  `
+});
+
+const sandPoints = new THREE.Points(sandGeometry, sandMaterial);
+sandPoints.frustumCulled = false;
+sandPoints.renderOrder = 3;
+scene.add(sandPoints);
+
+const windWorldDirection = new THREE.Vector3(DUNE_COS, 0, DUNE_SIN).normalize();
+
+function respawnSandParticle(particleIndex, caravanAlong, windStrength) {
+  const writeIndex = particleIndex * 3;
+  const randomA = Math.random();
+  const randomB = Math.random();
+  const randomC = Math.random();
+
+  const alongPosition = caravanAlong + (randomA - 0.45) * 620;
+  const crestIndex = Math.round((randomB - 0.5) * 5);
+  const acrossPosition = solveCrestAcross(alongPosition, crestIndex) + (randomC - 0.5) * 4;
+  const worldX = worldXOf(acrossPosition, alongPosition);
+  const worldZ = worldZOf(acrossPosition, alongPosition);
+
+  sandPositions[writeIndex] = worldX;
+  sandPositions[writeIndex + 1] = terrainHeightAt(worldX, worldZ) + 0.25 + Math.random() * 0.7;
+  sandPositions[writeIndex + 2] = worldZ;
+
+  const gustSpeed = 3.0 + windStrength * 16 + Math.random() * 4;
+  sandVelocities[writeIndex] = windWorldDirection.x * gustSpeed + (Math.random() - 0.5) * 1.6;
+  sandVelocities[writeIndex + 1] = 0.35 + Math.random() * (0.9 + windStrength * 1.9);
+  sandVelocities[writeIndex + 2] = windWorldDirection.z * gustSpeed + (Math.random() - 0.5) * 1.6;
+
+  sandLifetimes[particleIndex] = 2.4 + Math.random() * 3.4;
+  sandAges[particleIndex] = 0;
+  sandSizes[particleIndex] = 0.14 + Math.random() * 0.34;
+  sandAlphas[particleIndex] = 0;
+}
+
+function updateSandParticles(deltaTime, caravanAlong, windStrength, sceneTime) {
+  const activeCount = Math.round(120 + windStrength * (SAND_PARTICLE_COUNT - 120));
+  for (let particleIndex = 0; particleIndex < SAND_PARTICLE_COUNT; particleIndex++) {
+    const writeIndex = particleIndex * 3;
+    if (particleIndex >= activeCount) {
+      sandAlphas[particleIndex] = 0;
+      continue;
+    }
+    sandAges[particleIndex] += deltaTime;
+    if (sandAges[particleIndex] >= sandLifetimes[particleIndex]) {
+      respawnSandParticle(particleIndex, caravanAlong, windStrength);
+      continue;
+    }
+    const turbulence = Math.sin(sceneTime * 3.1 + particleIndex * 0.7) * 0.6;
+    sandPositions[writeIndex] += (sandVelocities[writeIndex] + turbulence) * deltaTime;
+    sandPositions[writeIndex + 1] += sandVelocities[writeIndex + 1] * deltaTime;
+    sandPositions[writeIndex + 2] += (sandVelocities[writeIndex + 2] - turbulence * 0.4) * deltaTime;
+    sandVelocities[writeIndex + 1] -= 0.55 * deltaTime;
+
+    const lifeFraction = sandAges[particleIndex] / sandLifetimes[particleIndex];
+    sandAlphas[particleIndex] = Math.sin(Math.PI * lifeFraction) * (0.14 + windStrength * 0.28);
+  }
+  sandGeometry.attributes.position.needsUpdate = true;
+  sandGeometry.attributes.aAlpha.needsUpdate = true;
+  sandGeometry.attributes.aSize.needsUpdate = true;
+}
+
+for (let particleIndex = 0; particleIndex < SAND_PARTICLE_COUNT; particleIndex++) {
+  respawnSandParticle(particleIndex, 0, 0.35);
+  sandAges[particleIndex] = Math.random() * sandLifetimes[particleIndex];
+}
+
+/* ==========================================================================
+   9. Caravan animation
+   ========================================================================== */
+
+const caravanState = {
+  alongDistance: 0,
+  camelCount: 24,
+  windStrength: 0.35,
+  timeOfDay: 0.58
+};
+
+const caravanLeadPoint = new THREE.Vector3();
+const caravanCenterPoint = new THREE.Vector3();
+const caravanTailPoint = new THREE.Vector3();
+const caravanForward = new THREE.Vector3(0, 0, 1);
+const leadRiderHeadPosition = new THREE.Vector3();
+const leadRiderForward = new THREE.Vector3(0, 0, 1);
+const alongsideCamelPosition = new THREE.Vector3();
+const alongsideTargetPosition = new THREE.Vector3();
+
+const pathSampleAhead = new THREE.Vector3();
+const pathSampleBehind = new THREE.Vector3();
+const pathTangent = new THREE.Vector3();
+
+function samplePathTangent(alongDistance, target) {
+  caravanPathPoint(alongDistance + 1.2, pathSampleAhead);
+  caravanPathPoint(alongDistance - 1.2, pathSampleBehind);
+  return target.copy(pathSampleAhead).sub(pathSampleBehind).normalize();
+}
+
+const camelRootPosition = new THREE.Vector3();
+const camelRootQuaternion = new THREE.Quaternion();
+const camelRootEuler = new THREE.Euler();
+const camelRootScale = new THREE.Vector3();
+
+function updateCaravan(sceneTime) {
+  const activeCount = caravanState.camelCount;
+
+  for (let camelIndex = 0; camelIndex < MAX_CAMELS; camelIndex++) {
+    if (camelIndex >= activeCount) {
+      camelBodyMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      camelHumpMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      camelNeckLowerMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      camelNeckUpperMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      camelHeadMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      camelTailMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      saddleMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      riderRobeMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      riderHeadMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      riderVeilMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      cargoMesh.setMatrixAt(camelIndex * 2, ZERO_MATRIX);
+      cargoMesh.setMatrixAt(camelIndex * 2 + 1, ZERO_MATRIX);
+      for (let legIndex = 0; legIndex < 4; legIndex++) {
+        camelLegUpperMesh.setMatrixAt(camelIndex * 4 + legIndex, ZERO_MATRIX);
+        camelLegLowerMesh.setMatrixAt(camelIndex * 4 + legIndex, ZERO_MATRIX);
+        camelFootMesh.setMatrixAt(camelIndex * 4 + legIndex, ZERO_MATRIX);
+      }
+      continue;
+    }
+
+    const seed = camelSeeds[camelIndex];
+    const alongDistance = caravanState.alongDistance - camelIndex * CAMEL_SPACING
+      + Math.sin(sceneTime * 0.21 + seed * 9.0) * 0.5;
+
+    caravanPathPoint(alongDistance, camelRootPosition);
+    samplePathTangent(alongDistance, pathTangent);
+
+    const headingYaw = Math.atan2(pathTangent.x, pathTangent.z);
+    const headingPitch = -Math.asin(THREE.MathUtils.clamp(pathTangent.y, -1, 1));
+
+    // Pace gait: the legs of one side swing together, which is what makes a
+    // walking camel rock from side to side.
+    const gaitPhase = (alongDistance / STRIDE_LENGTH) * Math.PI * 2 + seed * 6.28;
+    const swayRoll = Math.sin(gaitPhase) * 0.085;
+    const verticalBob = Math.cos(gaitPhase * 2) * 0.028;
+
+    // lateral drift so the line is not perfectly straight
+    const lateralWander = Math.sin(alongDistance * 0.05 + seed * 5.0) * 0.45;
+
+    camelRootEuler.set(headingPitch, headingYaw, 0, 'YXZ');
+    camelRootQuaternion.setFromEuler(camelRootEuler);
+    camelRootPosition.x += Math.cos(headingYaw) * lateralWander;
+    camelRootPosition.z += -Math.sin(headingYaw) * lateralWander;
+    camelRootScale.setScalar(camelScales[camelIndex]);
+    camelRig.rigRoot.matrix.compose(camelRootPosition, camelRootQuaternion, camelRootScale);
+
+    camelRig.swayNode.rotation.set(0, Math.sin(gaitPhase) * 0.022, swayRoll);
+    camelRig.swayNode.position.y = verticalBob;
+
+    // neck / head
+    const neckSway = Math.sin(gaitPhase) * 0.05;
+    const headTurnPulse = Math.pow(Math.max(0, Math.sin(sceneTime * 0.27 + seed * 11.0)), 8);
+    const headTurnSide = seed > 0.5 ? 1 : -1;
+    camelRig.neckLowerNode.rotation.set(0.88 + Math.sin(gaitPhase * 2 + 0.6) * 0.04, neckSway * 0.6, 0);
+    camelRig.neckUpperNode.rotation.set(-0.28 - Math.sin(gaitPhase * 2) * 0.035, neckSway, 0);
+    camelRig.headNode.rotation.set(
+      0.30 + Math.sin(sceneTime * 0.9 + seed * 4.0) * 0.05,
+      headTurnPulse * 0.75 * headTurnSide,
+      headTurnPulse * 0.18 * headTurnSide
+    );
+    camelRig.tailNode.rotation.set(0.34, 0, Math.sin(gaitPhase * 1.5 + seed * 3.0) * 0.22);
+
+    // legs — pace: [front-left, hind-left] share a phase, [front-right, hind-right] the other
+    for (let legIndex = 0; legIndex < 4; legIndex++) {
+      const isLeftSide = legIndex === 0 || legIndex === 2;
+      const isHind = legIndex >= 2;
+      const legPhase = gaitPhase + (isLeftSide ? 0 : Math.PI) + (isHind ? 0.34 : 0);
+      const swing = Math.sin(legPhase);
+      const lift = Math.max(0, Math.sin(legPhase + 0.55));
+      const bendAmount = Math.pow(lift, 1.4) * (isHind ? 0.72 : 0.95);
+      camelRig.legUpperNodes[legIndex].rotation.x = swing * (isHind ? 0.36 : 0.42) - (isHind ? 0.08 : 0.04);
+      camelRig.legLowerNodes[legIndex].rotation.x = 0.12 + bendAmount;
+      camelRig.footNodes[legIndex].rotation.x = -0.10 - bendAmount * 0.55;
+    }
+
+    // rider
+    const riderAdjust = Math.pow(Math.max(0, Math.sin(sceneTime * 0.17 + seed * 7.3)), 10);
+    camelRig.riderNode.rotation.set(
+      0.06 + Math.sin(gaitPhase * 2 + 1.1) * 0.028 + riderAdjust * 0.11,
+      Math.sin(gaitPhase) * 0.05 + riderAdjust * 0.25 * headTurnSide,
+      -swayRoll * 0.55
+    );
+    camelRig.riderNode.position.y = 0.06 - verticalBob * 0.35;
+    camelRig.riderHeadNode.rotation.set(
+      -0.05 + riderAdjust * 0.1,
+      Math.sin(sceneTime * 0.35 + seed * 12.0) * 0.22 + riderAdjust * 0.4 * headTurnSide,
+      0
+    );
+
+    camelRig.rigRoot.updateMatrixWorld(true);
+
+    camelBodyMesh.setMatrixAt(camelIndex, camelRig.bodyNode.matrixWorld);
+    camelHumpMesh.setMatrixAt(camelIndex, camelRig.humpNode.matrixWorld);
+    camelNeckLowerMesh.setMatrixAt(camelIndex, camelRig.neckLowerNode.matrixWorld);
+    camelNeckUpperMesh.setMatrixAt(camelIndex, camelRig.neckUpperNode.matrixWorld);
+    camelHeadMesh.setMatrixAt(camelIndex, camelRig.headNode.matrixWorld);
+    camelTailMesh.setMatrixAt(camelIndex, camelRig.tailNode.matrixWorld);
+    saddleMesh.setMatrixAt(camelIndex, camelRig.saddleNode.matrixWorld);
+
+    for (let legIndex = 0; legIndex < 4; legIndex++) {
+      camelLegUpperMesh.setMatrixAt(camelIndex * 4 + legIndex, camelRig.legUpperNodes[legIndex].matrixWorld);
+      camelLegLowerMesh.setMatrixAt(camelIndex * 4 + legIndex, camelRig.legLowerNodes[legIndex].matrixWorld);
+      camelFootMesh.setMatrixAt(camelIndex * 4 + legIndex, camelRig.footNodes[legIndex].matrixWorld);
+    }
+
+    if (camelHasRider[camelIndex]) {
+      riderRobeMesh.setMatrixAt(camelIndex, camelRig.riderNode.matrixWorld);
+      riderHeadMesh.setMatrixAt(camelIndex, camelRig.riderHeadNode.matrixWorld);
+      riderVeilMesh.setMatrixAt(camelIndex, camelRig.riderHeadNode.matrixWorld);
+      cargoMesh.setMatrixAt(camelIndex * 2, ZERO_MATRIX);
+      cargoMesh.setMatrixAt(camelIndex * 2 + 1, ZERO_MATRIX);
+    } else {
+      riderRobeMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      riderHeadMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      riderVeilMesh.setMatrixAt(camelIndex, ZERO_MATRIX);
+      cargoMesh.setMatrixAt(camelIndex * 2, camelRig.cargoNodes[0].matrixWorld);
+      cargoMesh.setMatrixAt(camelIndex * 2 + 1, camelRig.cargoNodes[1].matrixWorld);
+    }
+
+    if (camelIndex === 0) {
+      caravanLeadPoint.copy(camelRootPosition);
+      caravanForward.copy(pathTangent);
+      leadRiderHeadPosition.setFromMatrixPosition(camelRig.riderHeadNode.matrixWorld);
+      leadRiderForward.copy(pathTangent);
+    }
+    // the "alongside" rig sits off the head of the line and looks back down it
+    if (camelIndex === 0) {
+      alongsideCamelPosition.copy(camelRootPosition);
+    }
+    if (camelIndex === Math.min(5, activeCount - 1)) {
+      alongsideTargetPosition.copy(camelRootPosition);
+    }
+  }
+
+  for (const animatedMesh of [camelBodyMesh, camelHumpMesh, camelNeckLowerMesh, camelNeckUpperMesh,
+    camelHeadMesh, camelTailMesh, camelLegUpperMesh, camelLegLowerMesh, camelFootMesh,
+    saddleMesh, cargoMesh, riderRobeMesh, riderHeadMesh, riderVeilMesh]) {
+    animatedMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  caravanPathPoint(caravanState.alongDistance - (activeCount * 0.5) * CAMEL_SPACING, caravanCenterPoint);
+  caravanPathPoint(caravanState.alongDistance - (activeCount - 1) * CAMEL_SPACING, caravanTailPoint);
+}
+
+/* ==========================================================================
+   10. Cameras
+   ========================================================================== */
+
+const CAMERA_MODES = ['overview', 'alongside', 'pov', 'drone', 'silhouette'];
+let activeCameraMode = 'overview';
+let cameraTransition = 0;
+
+const desiredCameraPosition = new THREE.Vector3();
+const desiredCameraTarget = new THREE.Vector3();
+const smoothedCameraTarget = new THREE.Vector3();
+const cameraRightAxis = new THREE.Vector3();
+const previousCaravanCenter = new THREE.Vector3();
+const caravanCenterDelta = new THREE.Vector3();
+const worldUpAxis = new THREE.Vector3(0, 1, 0);
+
+/* The sun sits on the windward side of the ridge, so -windWorldDirection is
+   the lit face and +windWorldDirection is the slip face lying in shadow. */
+const sunwardLateral = new THREE.Vector3();
+
+function computeDesiredCameraPose(sceneTime) {
+  cameraRightAxis.copy(caravanForward).cross(worldUpAxis).normalize();
+  sunwardLateral.copy(windWorldDirection)
+    .multiplyScalar(windWorldDirection.dot(sunHorizontalDirection) >= 0 ? 1 : -1);
+
+  if (activeCameraMode === 'alongside') {
+    // stand off the lit flank, ahead of the line, and let it walk towards you
+    const bobOffset = Math.sin(sceneTime * 1.55) * 0.09 + Math.sin(sceneTime * 0.87) * 0.05;
+    desiredCameraPosition.copy(alongsideCamelPosition)
+      .addScaledVector(sunwardLateral, 9.5)
+      .addScaledVector(caravanForward, 14.0);
+    // hold roughly the animals' own eye line even when standing off the crest
+    desiredCameraPosition.y = Math.max(
+      terrainHeightAt(desiredCameraPosition.x, desiredCameraPosition.z) + 1.9,
+      alongsideCamelPosition.y + 1.9
+    ) + bobOffset;
+    desiredCameraTarget.copy(alongsideTargetPosition).addScaledVector(worldUpAxis, 2.4);
+  } else if (activeCameraMode === 'pov') {
+    // over the rider's shoulder, so his camel's head sweeps the lower frame
+    desiredCameraPosition.copy(leadRiderHeadPosition)
+      .addScaledVector(leadRiderForward, -0.12)
+      .addScaledVector(worldUpAxis, 0.52)
+      .addScaledVector(cameraRightAxis, 0.55);
+    desiredCameraTarget.copy(leadRiderHeadPosition)
+      .addScaledVector(leadRiderForward, 55)
+      .addScaledVector(cameraRightAxis, 7.0)
+      .addScaledVector(worldUpAxis, -7.0 + Math.sin(sceneTime * 0.45) * 1.3);
+  } else if (activeCameraMode === 'drone') {
+    const orbitAngle = sceneTime * 0.05;
+    desiredCameraPosition.copy(caravanCenterPoint)
+      .addScaledVector(cameraRightAxis, Math.cos(orbitAngle) * 86)
+      .addScaledVector(caravanForward, Math.sin(orbitAngle) * 86);
+    desiredCameraPosition.y = terrainHeightAt(desiredCameraPosition.x, desiredCameraPosition.z) + 96;
+    desiredCameraTarget.copy(caravanCenterPoint);
+  } else if (activeCameraMode === 'silhouette') {
+    // stand on the neighbouring dune crest, looking back into the sun across
+    // the trough: clean sight line, caravan on the skyline
+    const centreAlong = duneAlongOf(caravanCenterPoint.x, caravanCenterPoint.z);
+    const neighbourAlong = centreAlong - 55;
+    const neighbourCrestIndex = CARAVAN_CREST_INDEX
+      + (windWorldDirection.dot(sunHorizontalDirection) >= 0 ? -1 : 1);
+    const neighbourAcross = solveCrestAcross(neighbourAlong, neighbourCrestIndex);
+    const neighbourX = worldXOf(neighbourAcross, neighbourAlong);
+    const neighbourZ = worldZOf(neighbourAcross, neighbourAlong);
+    desiredCameraPosition.set(neighbourX, terrainHeightAt(neighbourX, neighbourZ) + 9, neighbourZ);
+    desiredCameraTarget.copy(caravanCenterPoint).addScaledVector(worldUpAxis, 9);
+  } else {
+    // three-quarter view from the shaded side, high enough for the ridge to
+    // read but low enough to keep sky in the top of the frame
+    desiredCameraPosition.copy(caravanCenterPoint)
+      .addScaledVector(sunwardLateral, -96)
+      .addScaledVector(caravanForward, -34)
+      .addScaledVector(worldUpAxis, 34);
+    desiredCameraTarget.copy(caravanCenterPoint).addScaledVector(worldUpAxis, 12);
+  }
+}
+
+function setCameraMode(nextMode) {
+  if (!CAMERA_MODES.includes(nextMode) || nextMode === activeCameraMode) return;
+  activeCameraMode = nextMode;
+  cameraTransition = 0;
+  orbitControls.enabled = false;
+  for (const button of document.querySelectorAll('#camera-buttons button')) {
+    button.classList.toggle('active', button.dataset.camera === nextMode);
+  }
+  document.getElementById('hint').style.opacity = nextMode === 'overview' ? '1' : '0';
+}
+
+function updateCamera(deltaTime, sceneTime) {
+  computeDesiredCameraPose(sceneTime);
+  cameraTransition = Math.min(cameraTransition + deltaTime, 3);
+
+  const overviewSettled = activeCameraMode === 'overview' && cameraTransition > 1.25;
+
+  if (overviewSettled) {
+    if (!orbitControls.enabled) {
+      orbitControls.enabled = true;
+      orbitControls.target.copy(desiredCameraTarget);
+      smoothedCameraTarget.copy(desiredCameraTarget);
+    }
+    // keep the orbit rig travelling with the caravan
+    caravanCenterDelta.copy(caravanCenterPoint).sub(previousCaravanCenter);
+    orbitControls.target.add(caravanCenterDelta);
+    camera.position.add(caravanCenterDelta);
+    orbitControls.update();
+  } else {
+    const responsiveness = activeCameraMode === 'pov' ? 14 : (cameraTransition < 1.25 ? 3.2 : 5.0);
+    const blend = 1 - Math.exp(-responsiveness * deltaTime);
+    camera.position.lerp(desiredCameraPosition, blend);
+    smoothedCameraTarget.lerp(desiredCameraTarget, Math.min(blend * 1.6, 1));
+    camera.lookAt(smoothedCameraTarget);
+  }
+  previousCaravanCenter.copy(caravanCenterPoint);
+}
+
+/* ==========================================================================
+   11. Lighting / atmosphere update
+   ========================================================================== */
+
+const shadowFocusPoint = new THREE.Vector3();
+
+function applySkyState() {
+  updateSunDirection();
+
+  skyUniforms.uZenithColor.value.copy(skyState.zenith);
+  skyUniforms.uHorizonColor.value.copy(skyState.horizon);
+  skyUniforms.uHazeColor.value.copy(skyState.fog);
+  skyUniforms.uSunDiskColor.value.copy(skyState.disk);
+  skyUniforms.uSunGlowColor.value.copy(skyState.glow);
+  skyUniforms.uSunDirection.value.copy(sunDirection);
+  skyUniforms.uDiskRadius.value = skyState.diskRadius;
+  skyUniforms.uDiskBrightness.value = skyState.diskBrightness;
+  skyUniforms.uGlowSigma.value = skyState.glowSigma;
+  skyUniforms.uGlowStrength.value = skyState.glowStrength;
+  skyUniforms.uStarAmount.value = skyState.stars;
+
+  sunLight.color.copy(skyState.sunLight);
+  sunLight.intensity = skyState.sunIntensity;
+  sunLight.castShadow = skyState.sunIntensity > 0.35;
+
+  hemisphereLight.color.copy(skyState.hemiSky);
+  hemisphereLight.groundColor.copy(skyState.hemiGround);
+  hemisphereLight.intensity = skyState.hemiIntensity;
+
+  fogState.color.copy(skyState.fog);
+  fogState.density = skyState.fogDensity + caravanState.windStrength * 0.0011;
+
+  terrainUniforms.uShadeTint.value.copy(skyState.shadeTint);
+  terrainUniforms.uHeatShimmer.value = skyState.heat * 0.55;
+  renderer.toneMappingExposure = skyState.exposure;
+
+  sandUniforms.uSandColor.value.copy(skyState.sunLight).lerp(skyState.horizon, 0.35).multiplyScalar(1.05);
+}
+
+function updateShadowCamera() {
+  shadowFocusPoint.copy(caravanCenterPoint);
+  const elevationRadians = Math.max(THREE.MathUtils.degToRad(skyState.sunElevation), 0.02);
+  const shadowExtent = THREE.MathUtils.clamp(58 / Math.tan(elevationRadians), 95, 235);
+  const shadowCamera = sunLight.shadow.camera;
+  shadowCamera.left = -shadowExtent;
+  shadowCamera.right = shadowExtent;
+  shadowCamera.top = shadowExtent;
+  shadowCamera.bottom = -shadowExtent;
+  shadowCamera.near = 1;
+  shadowCamera.far = 900;
+  shadowCamera.updateProjectionMatrix();
+
+  sunLight.target.position.copy(shadowFocusPoint);
+  sunLight.target.updateMatrixWorld();
+  sunLight.position.copy(shadowFocusPoint).addScaledVector(sunDirection, 420);
+}
+
+const streakScreenAxis = new THREE.Vector2(1, 0);
+const windScreenProbeA = new THREE.Vector3();
+const windScreenProbeB = new THREE.Vector3();
+
+function updateSandStreakAxis() {
+  windScreenProbeA.copy(caravanCenterPoint).project(camera);
+  windScreenProbeB.copy(caravanCenterPoint).addScaledVector(windWorldDirection, 12).project(camera);
+  streakScreenAxis.set(windScreenProbeB.x - windScreenProbeA.x, -(windScreenProbeB.y - windScreenProbeA.y));
+  if (streakScreenAxis.lengthSq() < 1e-9) streakScreenAxis.set(1, 0);
+  streakScreenAxis.normalize();
+  sandUniforms.uStreakAxis.value.copy(streakScreenAxis);
+}
+
+/* ==========================================================================
+   12. UI wiring
+   ========================================================================== */
+
+const timeSlider = document.getElementById('time-slider');
+const lengthSlider = document.getElementById('length-slider');
+const windSlider = document.getElementById('wind-slider');
+const timeValueLabel = document.getElementById('time-value');
+const lengthValueLabel = document.getElementById('length-value');
+const windValueLabel = document.getElementById('wind-value');
+const readoutElement = document.getElementById('readout');
+const panelElement = document.getElementById('panel');
+
+function refreshTimeOfDay() {
+  caravanState.timeOfDay = Number(timeSlider.value) / 1000;
+  evaluateSky(caravanState.timeOfDay);
+  applySkyState();
+  timeValueLabel.textContent = skyState.label;
+}
+
+timeSlider.addEventListener('input', refreshTimeOfDay);
+
+lengthSlider.addEventListener('input', () => {
+  caravanState.camelCount = Number(lengthSlider.value);
+  lengthValueLabel.textContent = `${caravanState.camelCount} camels`;
+});
+
+windSlider.addEventListener('input', () => {
+  caravanState.windStrength = Number(windSlider.value) / 100;
+  windValueLabel.textContent = `${windSlider.value}%`;
+  terrainUniforms.uWindStrength.value = caravanState.windStrength;
+  footprintUniforms.uFootprintLife.value = 250 - caravanState.windStrength * 170;
+  fogState.density = skyState.fogDensity + caravanState.windStrength * 0.0011;
+});
+
+document.getElementById('camera-buttons').addEventListener('click', (clickEvent) => {
+  const button = clickEvent.target.closest('button');
+  if (button) setCameraMode(button.dataset.camera);
+});
+
+document.getElementById('toggle-panel').addEventListener('click', () => {
+  panelElement.classList.toggle('collapsed');
+  document.getElementById('toggle-panel').textContent = panelElement.classList.contains('collapsed') ? '+' : '–';
+});
+
+window.addEventListener('keydown', (keyEvent) => {
+  const key = keyEvent.key.toLowerCase();
+  if (key === 'h') document.getElementById('toggle-panel').click();
+  const numericKey = Number(key);
+  if (numericKey >= 1 && numericKey <= CAMERA_MODES.length) setCameraMode(CAMERA_MODES[numericKey - 1]);
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  updatePointPixelScale();
+});
+
+function updatePointPixelScale() {
+  const verticalFovRadians = THREE.MathUtils.degToRad(camera.fov);
+  sandUniforms.uPixelScale.value = window.innerHeight / (2 * Math.tan(verticalFovRadians / 2));
+}
+
+/* ==========================================================================
+   13. Boot + main loop
+   ========================================================================== */
+
+caravanState.camelCount = Number(lengthSlider.value);
+caravanState.windStrength = Number(windSlider.value) / 100;
+lengthValueLabel.textContent = `${caravanState.camelCount} camels`;
+windValueLabel.textContent = `${windSlider.value}%`;
+terrainUniforms.uWindStrength.value = caravanState.windStrength;
+footprintUniforms.uFootprintLife.value = 250 - caravanState.windStrength * 170;
+refreshTimeOfDay();
+updatePointPixelScale();
+
+caravanState.alongDistance = 0;
+caravanPathPoint(0, caravanLeadPoint);
+caravanPathPoint(-caravanState.camelCount * 0.5 * CAMEL_SPACING, caravanCenterPoint);
+previousCaravanCenter.copy(caravanCenterPoint);
+buildTerrainImmediately(caravanCenterPoint.x, caravanCenterPoint.z);
+
+// lay down a trail so the caravan does not start on virgin sand; prints are
+// aged by how far back they sit, exactly as if the line had already walked it
+const FOOTPRINT_PITCH = STRIDE_LENGTH * 0.5;
+for (let preloadIndex = 0; preloadIndex < FOOTPRINT_COUNT / 2; preloadIndex++) {
+  const preloadAlong = -2.2 - preloadIndex * FOOTPRINT_PITCH;
+  const preloadBirth = -(preloadIndex * FOOTPRINT_PITCH) / CARAVAN_SPEED;
+  spawnFootprint(preloadAlong, 0.55, preloadBirth);
+  spawnFootprint(preloadAlong - 0.7, -0.55, preloadBirth);
+}
+lastFootprintAlong = caravanState.alongDistance - 2.2;
+footprintMesh.instanceMatrix.needsUpdate = true;
+footprintBirthAttribute.needsUpdate = true;
+
+const frameClock = new THREE.Clock();
+let sceneTime = 0;
+let frameAccumulator = 0;
+let frameCounter = 0;
+let smoothedFps = 60;
+let qualityCheckTimer = 0;
+let loaderHidden = false;
+
+function tick() {
+  requestAnimationFrame(tick);
+
+  const deltaTime = Math.min(frameClock.getDelta(), 0.05);
+  sceneTime += deltaTime;
+
+  caravanState.alongDistance += CARAVAN_SPEED * deltaTime;
+
+  terrainUniforms.uSceneTime.value = sceneTime;
+  footprintUniforms.uSceneTime.value = sceneTime;
+
+  updateCaravan(sceneTime);
+
+  // footprints trail the last animal in the line
+  const trailAlong = caravanState.alongDistance - 2.2;
+  while (trailAlong - lastFootprintAlong > FOOTPRINT_PITCH) {
+    lastFootprintAlong += FOOTPRINT_PITCH;
+    const lateral = (footprintCursor % 2 === 0 ? 1 : -1) * (0.5 + Math.random() * 0.25);
+    spawnFootprint(lastFootprintAlong, lateral, sceneTime);
+    spawnFootprint(lastFootprintAlong - 0.7, -lateral, sceneTime);
+    footprintMesh.instanceMatrix.needsUpdate = true;
+    footprintBirthAttribute.needsUpdate = true;
+  }
+
+  updateCamera(deltaTime, sceneTime);
+  updateShadowCamera();
+  updateSandStreakAxis();
+  updateSandParticles(deltaTime, duneAlongOf(caravanCenterPoint.x, caravanCenterPoint.z),
+    caravanState.windStrength, sceneTime);
+
+  skyDome.position.copy(camera.position);
+  skyUniforms.uTime.value = sceneTime;
+
+  // scroll the heightfield along with the caravan, and rebake the dune
+  // self-shadows when the sun has moved appreciably
+  if (!terrainJob.active) {
+    const driftX = caravanCenterPoint.x - terrainOrigin.x;
+    const driftZ = caravanCenterPoint.z - terrainOrigin.y;
+    if (Math.hypot(driftX, driftZ) > TERRAIN_RECENTER_DISTANCE) {
+      startTerrainJob(true, caravanCenterPoint.x, caravanCenterPoint.z);
+    } else if (Math.abs(skyState.sunElevation - terrainJob.bakedElevation) > 0.7) {
+      startTerrainJob(false, terrainOrigin.x, terrainOrigin.y);
+    }
+  }
+  advanceTerrainJob(4.5);
+
+  renderer.render(scene, camera);
+
+  // frame statistics + adaptive resolution
+  frameAccumulator += deltaTime;
+  frameCounter++;
+  if (frameAccumulator >= 0.5) {
+    smoothedFps = frameCounter / frameAccumulator;
+    readoutElement.textContent =
+      `${smoothedFps.toFixed(0)} fps · ${caravanState.camelCount} camels · ${skyState.label.toLowerCase()}`;
+    frameAccumulator = 0;
+    frameCounter = 0;
+
+    qualityCheckTimer += 0.5;
+    if (qualityCheckTimer > 3 && smoothedFps < 46 && pixelRatioCap > 1) {
+      pixelRatioCap = Math.max(1, pixelRatioCap - 0.5);
+      renderer.setPixelRatio(pixelRatioCap);
+      qualityCheckTimer = 0;
+    }
+  }
+
+  if (!loaderHidden && sceneTime > 0.35) {
+    loaderHidden = true;
+    const loaderElement = document.getElementById('loader');
+    loaderElement.classList.add('done');
+    setTimeout(() => loaderElement.remove(), 1000);
+  }
+}
+
+tick();
+</script>
+</body>
+</html>
