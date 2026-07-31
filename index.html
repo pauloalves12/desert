@@ -347,31 +347,36 @@ const SKY_KEYFRAMES = [
     sunLight: 0xfff1d4, sunIntensity: 3.6, hemiSky: 0x9dc2ee, hemiGround: 0xd0a877,
     hemiIntensity: 1.55, fog: 0xc9dcee, fogDensity: 0.00185, stars: 0.0,
     exposure: 0.94, diskRadius: 0.028, diskBrightness: 5.0, glowSigma: 0.10, glowStrength: 0.30,
-    shadeTint: 0x93a1c6, heat: 1.0 },
+    shadeTint: 0x93a1c6, heat: 1.0,
+    cloudLit: 0xf6f2ea, cloudShade: 0x9fb2cc, cloudAmount: 0.50 },
   { key: 0.36, label: 'Late afternoon', sunElevation: 13.5, sunAzimuth: 262,
     zenith: 0x2f70c8, horizon: 0xefd2a2, disk: 0xffe9ae, glow: 0xffce86,
     sunLight: 0xffdca6, sunIntensity: 3.1, hemiSky: 0x9ab8e2, hemiGround: 0xd8a771,
     hemiIntensity: 1.30, fog: 0xdfc7a6, fogDensity: 0.00205, stars: 0.0,
     exposure: 0.97, diskRadius: 0.034, diskBrightness: 5.2, glowSigma: 0.15, glowStrength: 0.46,
-    shadeTint: 0x8a96c0, heat: 0.55 },
+    shadeTint: 0x8a96c0, heat: 0.55,
+    cloudLit: 0xffe4bc, cloudShade: 0xa3a5c0, cloudAmount: 0.62 },
   { key: 0.62, label: 'Golden hour', sunElevation: 5.4, sunAzimuth: 266,
     zenith: 0x22579f, horizon: 0xffb768, disk: 0xffb964, glow: 0xff9c4a,
     sunLight: 0xffb570, sunIntensity: 2.8, hemiSky: 0x8b9fd2, hemiGround: 0xd9945a,
     hemiIntensity: 1.05, fog: 0xedb684, fogDensity: 0.00235, stars: 0.02,
     exposure: 1.02, diskRadius: 0.042, diskBrightness: 5.6, glowSigma: 0.19, glowStrength: 0.60,
-    shadeTint: 0x7d88ba, heat: 0.22 },
+    shadeTint: 0x7d88ba, heat: 0.22,
+    cloudLit: 0xffc182, cloudShade: 0x8e7fae, cloudAmount: 0.72 },
   { key: 0.84, label: 'Sunset', sunElevation: 1.8, sunAzimuth: 270,
     zenith: 0x17376f, horizon: 0xff6c34, disk: 0xff5c26, glow: 0xff6330,
     sunLight: 0xff8b4c, sunIntensity: 1.8, hemiSky: 0x6b78b4, hemiGround: 0xb86a42,
     hemiIntensity: 0.85, fog: 0xd88a5c, fogDensity: 0.00268, stars: 0.25,
     exposure: 1.08, diskRadius: 0.050, diskBrightness: 6.2, glowSigma: 0.21, glowStrength: 0.62,
-    shadeTint: 0x7c81ae, heat: 0.06 },
+    shadeTint: 0x7c81ae, heat: 0.06,
+    cloudLit: 0xff8a4e, cloudShade: 0x6d5590, cloudAmount: 0.78 },
   { key: 1.00, label: 'Dusk', sunElevation: -7.0, sunAzimuth: 274,
     zenith: 0x0a1130, horizon: 0x4c2a52, disk: 0x8e3320, glow: 0x76303a,
     sunLight: 0x6a5a94, sunIntensity: 0.45, hemiSky: 0x3e4680, hemiGround: 0x5a4a58,
     hemiIntensity: 0.85, fog: 0x342a4c, fogDensity: 0.00300, stars: 1.0,
     exposure: 1.30, diskRadius: 0.052, diskBrightness: 2.4, glowSigma: 0.26, glowStrength: 0.40,
-    shadeTint: 0xc0c0cc, heat: 0.0 }
+    shadeTint: 0xc0c0cc, heat: 0.0,
+    cloudLit: 0x6b4a72, cloudShade: 0x2a2444, cloudAmount: 0.62 }
 ];
 
 const skyState = {
@@ -381,12 +386,15 @@ const skyState = {
   glowStrength: 0, heat: 0,
   zenith: new THREE.Color(), horizon: new THREE.Color(), disk: new THREE.Color(),
   glow: new THREE.Color(), sunLight: new THREE.Color(), hemiSky: new THREE.Color(),
-  hemiGround: new THREE.Color(), fog: new THREE.Color(), shadeTint: new THREE.Color()
+  hemiGround: new THREE.Color(), fog: new THREE.Color(), shadeTint: new THREE.Color(),
+  cloudLit: new THREE.Color(), cloudShade: new THREE.Color()
 };
 
-const COLOR_FIELDS = ['zenith', 'horizon', 'disk', 'glow', 'sunLight', 'hemiSky', 'hemiGround', 'fog', 'shadeTint'];
+const COLOR_FIELDS = ['zenith', 'horizon', 'disk', 'glow', 'sunLight', 'hemiSky', 'hemiGround', 'fog', 'shadeTint',
+  'cloudLit', 'cloudShade'];
 const SCALAR_FIELDS = ['sunElevation', 'sunAzimuth', 'sunIntensity', 'hemiIntensity',
-  'fogDensity', 'stars', 'exposure', 'diskRadius', 'diskBrightness', 'glowSigma', 'glowStrength', 'heat'];
+  'fogDensity', 'stars', 'exposure', 'diskRadius', 'diskBrightness', 'glowSigma', 'glowStrength', 'heat',
+  'cloudAmount'];
 
 const colorScratchA = new THREE.Color();
 const colorScratchB = new THREE.Color();
@@ -439,7 +447,11 @@ const skyUniforms = {
   uGlowStrength: { value: 0.8 },
   uStarAmount: { value: 0 },
   uGroundBounceColor: { value: new THREE.Color(0.35, 0.25, 0.15) },
-  uTime: { value: 0 }
+  uTime: { value: 0 },
+  uCloudLitColor: { value: new THREE.Color(1, 1, 1) },
+  uCloudShadeColor: { value: new THREE.Color(0.5, 0.5, 0.6) },
+  uCloudAmount: { value: 0.6 },
+  uCloudDrift: { value: new THREE.Vector2(0, 0) }
 };
 
 const skyMaterial = new THREE.ShaderMaterial({
@@ -461,9 +473,38 @@ const skyMaterial = new THREE.ShaderMaterial({
     uniform vec3 uGroundBounceColor;
     uniform vec3 uSunDirection;
     uniform float uDiskRadius, uDiskBrightness, uGlowSigma, uGlowStrength, uStarAmount, uTime;
+    uniform vec3 uCloudLitColor, uCloudShadeColor;
+    uniform float uCloudAmount;
+    uniform vec2 uCloudDrift;
 
     float hash31(vec3 seed) {
       return fract(sin(dot(seed, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+    }
+
+    float skyHash(vec2 point) {
+      return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
+    }
+
+    float skyNoise(vec2 point) {
+      vec2 cell = floor(point);
+      vec2 local = fract(point);
+      vec2 smoothed = local * local * (3.0 - 2.0 * local);
+      return mix(mix(skyHash(cell), skyHash(cell + vec2(1.0, 0.0)), smoothed.x),
+                 mix(skyHash(cell + vec2(0.0, 1.0)), skyHash(cell + vec2(1.0, 1.0)), smoothed.x),
+                 smoothed.y);
+    }
+
+    float skyFbm(vec2 point) {
+      float total = 0.0;
+      float amplitude = 0.5;
+      float normalisation = 0.0;
+      for (int octave = 0; octave < 4; octave++) {
+        total += amplitude * skyNoise(point);
+        normalisation += amplitude;
+        point *= 2.07;
+        amplitude *= 0.5;
+      }
+      return total / normalisation;
     }
 
     float starField(vec3 direction) {
@@ -503,6 +544,25 @@ const skyMaterial = new THREE.ShaderMaterial({
       float limbDarken = 1.0 - 0.22 * smoothstep(0.0, uDiskRadius, angleToSun);
       skyColor = mix(skyColor, uSunDiskColor * (uDiskBrightness * limbDarken), diskMask);
 
+      #ifndef ENV_PROBE
+      /* High cirrus, projected onto a notional plane and stretched along the
+         wind. The plane distance is clamped: a true 1/y projection sends the
+         noise frequency to infinity at the horizon and the layer averages away.
+         Kept thin, so the sun still burns through it. */
+      if (uCloudAmount > 0.002 && direction.y > 0.006) {
+        float cloudPlaneDistance = 1.0 / (max(direction.y, 0.0) + 0.062);
+        vec2 cloudPlane = direction.xz * cloudPlaneDistance * 0.62 + uCloudDrift;
+        vec2 streakedUv = vec2(cloudPlane.x * 0.42 + cloudPlane.y * 0.14, cloudPlane.y * 1.7);
+        float cloudBody = skyFbm(streakedUv * 1.8);
+        float cloudDetail = skyFbm(streakedUv * 5.4 + 11.3);
+        float cloudDensity = smoothstep(0.44, 0.68, cloudBody * 0.74 + cloudDetail * 0.26);
+        cloudDensity *= smoothstep(0.006, 0.075, direction.y) * uCloudAmount;
+        float cloudSunFacing = pow(max(dot(direction, uSunDirection) * 0.5 + 0.5, 0.0), 3.0);
+        vec3 cloudColor = mix(uCloudShadeColor, uCloudLitColor, cloudSunFacing);
+        skyColor = mix(skyColor, cloudColor, clamp(cloudDensity, 0.0, 1.0) * 0.82);
+      }
+      #endif
+
       #ifdef ENV_PROBE
         skyColor = mix(uGroundBounceColor, skyColor, smoothstep(-0.60, 0.05, upness));
       #else
@@ -519,7 +579,7 @@ const skyMaterial = new THREE.ShaderMaterial({
 
 const skyDome = new THREE.Mesh(new THREE.SphereGeometry(3200, 40, 26), skyMaterial);
 skyDome.frustumCulled = false;
-skyDome.renderOrder = -1000;
+skyDome.renderOrder = 1000; // drawn after the terrain, so covered sky costs nothing
 scene.add(skyDome);
 
 /* A second copy of the sky lives in its own scene and is convolved into an
@@ -756,6 +816,16 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       float rippleSlope = (cos(ripplePhase) * 6.1 * 0.021 + cos(ripplePhaseFine) * 20.1 * 0.004) * rippleStrength
         + cos(megaPhase) * 0.92 * 0.075 * megaStrength;
 
+      /* Mid-scale relief. The heightfield is smooth at ten-metre scale; a shallow
+         noise gradient folded into the normal gives the sheet the soft lumpiness
+         real dunes have between the ripples and the dune form itself. */
+      vec2 duneDetailUv = vTerrainWorldXZ * 0.115;
+      float duneDetailCentre = sandNoise(duneDetailUv);
+      float duneDetailX = sandNoise(duneDetailUv + vec2(0.34, 0.0));
+      float duneDetailZ = sandNoise(duneDetailUv + vec2(0.0, 0.34));
+      vec2 duneDetailGradient = vec2(duneDetailX - duneDetailCentre, duneDetailZ - duneDetailCentre) / 0.34;
+      float duneDetailFade = (1.0 - smoothstep(140.0, 560.0, vTerrainViewDistance)) * vTerrainFlatness;
+
       // Avalanche streaks: slip faces are grooved down the fall line, never rippled.
       float slipStreak = sandNoise(vec2(rippleAcross * 1.7, rippleAlong * 0.16)) - 0.5;
       float slipAmount = (1.0 - vTerrainFlatness) * (1.0 - smoothstep(140.0, 420.0, vTerrainViewDistance));
@@ -792,6 +862,12 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
       // baked sky openness dims only the indirect term, never the sun
       reflectedLight.indirectDiffuse *= mix(1.0, skyOpenness, 0.8) * uSkylightIntensity;
 
+      /* Blue skylight times orange sand multiplies out to olive. Real shaded
+         sand reads blue-grey, so the indirect term is pulled part of the way
+         back towards neutral before it is tinted. */
+      float indirectLuminance = dot(reflectedLight.indirectDiffuse, vec3(0.2126, 0.7152, 0.0722));
+      reflectedLight.indirectDiffuse = mix(reflectedLight.indirectDiffuse, vec3(indirectLuminance), 0.42);
+
       float towardsSun = max(dot(-vTerrainViewDir, uSunDirectionWorld), 0.0);
       float grazing = 1.0 - abs(dot(vTerrainViewDir, vTerrainWorldNormal));
       float forwardScatter = pow(towardsSun, 5.0) * pow(grazing, 2.5) * selfShadow;
@@ -803,7 +879,8 @@ terrainMaterial.onBeforeCompile = (shaderProgram) => {
     `)
     .replace('#include <normal_fragment_begin>', /* glsl */`
       #include <normal_fragment_begin>
-      vec3 rippleWorldPerturb = vec3(rippleAcrossAxis.x, 0.0, rippleAcrossAxis.y) * (-rippleSlope);
+      vec3 rippleWorldPerturb = vec3(rippleAcrossAxis.x, 0.0, rippleAcrossAxis.y) * (-rippleSlope)
+        + vec3(duneDetailGradient.x, 0.0, duneDetailGradient.y) * (-0.22 * duneDetailFade);
       normal = normalize(normal + (viewMatrix * vec4(rippleWorldPerturb, 0.0)).xyz);
     `);
 };
@@ -1039,6 +1116,7 @@ function commitTerrainJob() {
     terrainGeometry.attributes.normal.needsUpdate = true;
     terrainOrigin.copy(terrainOriginPending);
     terrainMesh.position.set(terrainOrigin.x, 0, terrainOrigin.y);
+    rebuildGroundScatter(terrainOrigin.x, terrainOrigin.y);
   }
   terrainShadowBytes.set(terrainShadowBack);
   terrainShadowTexture.needsUpdate = true;
@@ -1377,6 +1455,104 @@ const ZERO_MATRIX = new THREE.Matrix4().compose(
 );
 
 /* ==========================================================================
+   6b. Ground scatter — the sparse tussocks and stones that give a dune sheet
+   its sense of scale. Placed only where the sand is gentle enough to hold
+   anything, which in a real erg means the interdune flats, never the slip face.
+   ========================================================================== */
+
+const SCATTER_TUFT_COUNT = 760;
+const SCATTER_STONE_COUNT = 340;
+const SCATTER_RADIUS = 165;
+
+const tuftBladeGeometries = [];
+for (let bladeIndex = 0; bladeIndex < 7; bladeIndex++) {
+  const bladeAngle = (bladeIndex / 7) * Math.PI * 2;
+  const bladeLean = 0.30 + (bladeIndex % 3) * 0.16;
+  tuftBladeGeometries.push(
+    new THREE.CylinderGeometry(0.004, 0.022, 0.42 + (bladeIndex % 4) * 0.09, 3, 1)
+      .translate(0, 0.21 + (bladeIndex % 4) * 0.045, 0)
+      .rotateX(Math.sin(bladeAngle) * bladeLean)
+      .rotateZ(Math.cos(bladeAngle) * bladeLean)
+  );
+}
+const scatterTuftGeometry = mergeGeometries(tuftBladeGeometries, false);
+const scatterStoneGeometry = new THREE.IcosahedronGeometry(0.17, 0).scale(1.0, 0.62, 0.85);
+
+const scatterTuftMesh = new THREE.InstancedMesh(
+  scatterTuftGeometry,
+  new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHex(0xb6a074, THREE.SRGBColorSpace),
+    roughness: 0.95, metalness: 0, envMapIntensity: 0.7, side: THREE.DoubleSide
+  }),
+  SCATTER_TUFT_COUNT
+);
+const scatterStoneMesh = new THREE.InstancedMesh(
+  scatterStoneGeometry,
+  new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHex(0x7a6650, THREE.SRGBColorSpace),
+    roughness: 0.9, metalness: 0, envMapIntensity: 0.6
+  }),
+  SCATTER_STONE_COUNT
+);
+for (const scatterMesh of [scatterTuftMesh, scatterStoneMesh]) {
+  scatterMesh.castShadow = true;
+  scatterMesh.receiveShadow = false;
+  scatterMesh.frustumCulled = false;
+  scene.add(scatterMesh);
+}
+
+const scatterPosition = new THREE.Vector3();
+const scatterQuaternion = new THREE.Quaternion();
+const scatterScale = new THREE.Vector3();
+const scatterMatrix = new THREE.Matrix4();
+const scatterNormal = new THREE.Vector3();
+const scatterUpAxis = new THREE.Vector3(0, 1, 0);
+const scatterColor = new THREE.Color();
+
+function placeScatter(mesh, count, originX, originZ, seedOffset, isStone) {
+  for (let slot = 0; slot < count; slot++) {
+    const angleHash = hashLattice(slot * 3 + seedOffset, slot * 7 + 19);
+    const radiusHash = hashLattice(slot * 5 + seedOffset, slot * 11 + 47);
+    const jitterHash = hashLattice(slot * 13 + seedOffset, slot * 17 + 71);
+    const angle = angleHash * Math.PI * 2;
+    const radius = Math.sqrt(radiusHash) * SCATTER_RADIUS;
+    const worldX = originX + Math.cos(angle) * radius;
+    const worldZ = originZ + Math.sin(angle) * radius;
+
+    terrainNormalAt(worldX, worldZ, scatterNormal);
+    // nothing takes root on a slip face, and tufts prefer the sheltered flats
+    const flatEnough = scatterNormal.y > (isStone ? 0.86 : 0.90);
+    if (!flatEnough || jitterHash > (isStone ? 0.8 : 0.75)) {
+      mesh.setMatrixAt(slot, ZERO_MATRIX);
+      continue;
+    }
+
+    scatterPosition.set(worldX, terrainHeightAt(worldX, worldZ) - (isStone ? 0.05 : 0.06), worldZ);
+    scatterQuaternion.setFromUnitVectors(scatterUpAxis, scatterNormal);
+    if (isStone) {
+      const stoneSize = 0.6 + jitterHash * 2.2;
+      scatterScale.set(stoneSize, stoneSize * (0.6 + angleHash * 0.5), stoneSize * (0.8 + radiusHash * 0.4));
+    } else {
+      const tuftSize = 0.9 + jitterHash * 2.1;
+      scatterScale.set(tuftSize, tuftSize * (0.7 + angleHash * 0.8), tuftSize);
+    }
+    scatterMatrix.compose(scatterPosition, scatterQuaternion, scatterScale);
+    mesh.setMatrixAt(slot, scatterMatrix);
+
+    scatterColor.setHex(isStone ? 0x7a6650 : 0xb6a074, THREE.SRGBColorSpace)
+      .multiplyScalar(0.72 + angleHash * 0.55);
+    mesh.setColorAt(slot, scatterColor);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+}
+
+function rebuildGroundScatter(originX, originZ) {
+  placeScatter(scatterTuftMesh, SCATTER_TUFT_COUNT, originX, originZ, 101, false);
+  placeScatter(scatterStoneMesh, SCATTER_STONE_COUNT, originX, originZ, 907, true);
+}
+
+/* ==========================================================================
    7. Footprints — a recycled ring of fading decals
    ========================================================================== */
 
@@ -1586,11 +1762,36 @@ scene.add(sandPoints);
 
 const windWorldDirection = new THREE.Vector3(DUNE_COS, 0, DUNE_SIN).normalize();
 
+/* Positions of hooves currently pressing into the sand, refilled every frame.
+   A slice of the grain pool respawns here instead of on the crests, so the
+   animals raise their own dust. */
+const hoofContactPositions = new Float32Array(MAX_CAMELS * 4 * 3);
+let hoofContactCount = 0;
+
+const HOOF_DUST_SHARE = 0.22;
+
 function respawnSandParticle(particleIndex, caravanAlong, windStrength) {
   const writeIndex = particleIndex * 3;
   const randomA = Math.random();
   const randomB = Math.random();
   const randomC = Math.random();
+
+  // a slice of the pool puffs up from whichever hooves are planted right now
+  if (particleIndex < SAND_PARTICLE_COUNT * HOOF_DUST_SHARE && hoofContactCount > 0) {
+    const hoofRead = (Math.floor(randomA * hoofContactCount) % hoofContactCount) * 3;
+    sandPositions[writeIndex] = hoofContactPositions[hoofRead] + (randomB - 0.5) * 0.5;
+    sandPositions[writeIndex + 1] = hoofContactPositions[hoofRead + 1] + 0.05 + randomC * 0.2;
+    sandPositions[writeIndex + 2] = hoofContactPositions[hoofRead + 2] + (randomC - 0.5) * 0.5;
+    const kickSpeed = 0.5 + windStrength * 2.2;
+    sandVelocities[writeIndex] = windWorldDirection.x * kickSpeed + (Math.random() - 0.5) * 1.1;
+    sandVelocities[writeIndex + 1] = 0.28 + Math.random() * 0.5;
+    sandVelocities[writeIndex + 2] = windWorldDirection.z * kickSpeed + (Math.random() - 0.5) * 1.1;
+    sandLifetimes[particleIndex] = 1.1 + Math.random() * 1.5;
+    sandAges[particleIndex] = 0;
+    sandSizes[particleIndex] = 0.22 + Math.random() * 0.4;
+    sandAlphas[particleIndex] = 0;
+    return;
+  }
 
   const alongPosition = caravanAlong + (randomA - 0.45) * 620;
   const crestIndex = Math.round((randomB - 0.5) * 5);
@@ -1614,7 +1815,8 @@ function respawnSandParticle(particleIndex, caravanAlong, windStrength) {
 }
 
 function updateSandParticles(deltaTime, caravanAlong, windStrength, sceneTime) {
-  const activeCount = Math.round(120 + windStrength * (SAND_PARTICLE_COUNT - 120));
+  const activeCount = Math.round(SAND_PARTICLE_COUNT * HOOF_DUST_SHARE + 120
+    + windStrength * (SAND_PARTICLE_COUNT * (1 - HOOF_DUST_SHARE) - 120));
   for (let particleIndex = 0; particleIndex < SAND_PARTICLE_COUNT; particleIndex++) {
     const writeIndex = particleIndex * 3;
     if (particleIndex >= activeCount) {
@@ -1682,6 +1884,7 @@ const camelRootScale = new THREE.Vector3();
 
 function updateCaravan(sceneTime) {
   const activeCount = caravanState.camelCount;
+  hoofContactCount = 0;
 
   for (let camelIndex = 0; camelIndex < MAX_CAMELS; camelIndex++) {
     if (camelIndex >= activeCount) {
@@ -1798,6 +2001,13 @@ function updateCaravan(sceneTime) {
       if (plantedAmount <= 0.02) {
         contactPatchMesh.setMatrixAt(legInstance, ZERO_MATRIX);
       } else {
+        if (plantedAmount > 0.55 && hoofContactCount < MAX_CAMELS * 4) {
+          const hoofWrite = hoofContactCount * 3;
+          hoofContactPositions[hoofWrite] = contactPatchPosition.x;
+          hoofContactPositions[hoofWrite + 1] = groundHeight;
+          hoofContactPositions[hoofWrite + 2] = contactPatchPosition.z;
+          hoofContactCount++;
+        }
         contactPatchPosition.y = groundHeight + 0.03;
         terrainNormalAt(contactPatchPosition.x, contactPatchPosition.z, contactPatchNormal);
         contactPatchQuaternion.setFromUnitVectors(footprintUpAxis, contactPatchNormal);
@@ -1985,6 +2195,9 @@ function applySkyState() {
   skyUniforms.uGlowSigma.value = skyState.glowSigma;
   skyUniforms.uGlowStrength.value = skyState.glowStrength;
   skyUniforms.uStarAmount.value = skyState.stars;
+  skyUniforms.uCloudLitColor.value.copy(skyState.cloudLit);
+  skyUniforms.uCloudShadeColor.value.copy(skyState.cloudShade);
+  skyUniforms.uCloudAmount.value = skyState.cloudAmount;
 
   sunLight.color.copy(skyState.sunLight);
   sunLight.intensity = skyState.sunIntensity;
@@ -2139,6 +2352,7 @@ caravanPathPoint(0, caravanLeadPoint);
 caravanPathPoint(-caravanState.camelCount * 0.5 * CAMEL_SPACING, caravanCenterPoint);
 previousCaravanCenter.copy(caravanCenterPoint);
 buildTerrainImmediately(caravanCenterPoint.x, caravanCenterPoint.z);
+rebuildGroundScatter(terrainOrigin.x, terrainOrigin.y);
 
 // lay down a trail so the caravan does not start on virgin sand; prints are
 // aged by how far back they sit, exactly as if the line had already walked it
@@ -2193,6 +2407,10 @@ function tick() {
 
   skyDome.position.copy(camera.position);
   skyUniforms.uTime.value = sceneTime;
+  skyUniforms.uCloudDrift.value.set(
+    DUNE_COS * sceneTime * (0.0016 + caravanState.windStrength * 0.0042),
+    DUNE_SIN * sceneTime * (0.0016 + caravanState.windStrength * 0.0042)
+  );
 
   // scroll the heightfield along with the caravan, and rebake the dune
   // self-shadows when the sun has moved appreciably

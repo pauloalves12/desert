@@ -38,11 +38,18 @@ angles. Footprints are a recycled ring of decals that fade with age and erode
 faster in wind; each planted hoof presses its own contact patch into the sand.
 Grains stream off the crests as screen-aligned streaks.
 
+**Ground.** Tussocks of dried grass and small stones are scattered across the
+sheet, but only where the sand is gentle enough to hold anything — never on a
+slip face. They are what give the dunes their scale. The scatter is rebuilt
+whenever the terrain recenters, so it travels with the caravan.
+
 **Sky and air.** A gradient dome with a large sun disk, horizon glow, dust haze
-matched to the scene fog, and stars that come out as it darkens. Haze is
+matched to the scene fog, and stars that come out as it darkens. High cirrus
+drifts overhead, projected onto a notional plane and stretched along the wind,
+lit from the sun's side and thin enough for the sun to burn through. Haze is
 stratified by height, dense in the troughs and thin over the crests, so distant
 dunes stack in layers rather than fading uniformly. Five time-of-day keyframes
-are interpolated for sky, sun, fill light, fog, exposure and shadow tint.
+are interpolated for sky, sun, cloud, fill light, fog, exposure and shadow tint.
 
 ## Controls
 
@@ -57,7 +64,8 @@ Keys `1`–`5` switch cameras; `H` collapses the panel.
 
 ## Performance
 
-19 draw calls and ~490k triangles with the full 40-camel caravan; CPU simulation
-costs about 1.1 ms per frame (1.9 ms at the 95th percentile, 4 ms worst case while
-a terrain slice rebakes). Device pixel ratio is clamped to 2 and steps down
-automatically if the frame rate drops.
+21 draw calls and ~560k triangles with the full 40-camel caravan; CPU simulation
+costs about 1.0 ms per frame (2.3 ms at the 95th percentile, 4.1 ms worst case
+while a terrain slice rebakes). The sky is drawn after the opaque pass, so the
+cloud layer only shades pixels that are actually sky. Device pixel ratio is
+clamped to 2 and steps down automatically if the frame rate drops.
